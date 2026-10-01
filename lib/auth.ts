@@ -7,7 +7,8 @@ import { one } from "@/lib/db";
 import { isProductPlan, type ProductPlan } from "@/lib/entitlements";
 import { verifyPassword } from "@/lib/password";
 
-export type Session = {
+export type DeskSession = {
+  kind: "desk";
   uid: number;
   role: "admin" | "customer";
   name: string;
@@ -19,6 +20,21 @@ export type Session = {
   logoLetter: string;
   supportPhone: string;
 };
+
+export type OperatorSession = {
+  kind: "operator";
+  uid: number;
+  role: "operator";
+  name: string;
+  email: string;
+};
+
+export type Session = DeskSession | OperatorSession;
+
+export function homePath(session: Session) {
+  if (session.kind === "operator") return "/operator";
+  return session.role === "admin" ? "/admin" : "/portal";
+}
 
 type UserRow = {
   id: number;
@@ -47,8 +63,8 @@ function sign(body: string) {
   return crypto.createHmac("sha256", secret()).update(body).digest("base64url");
 }
 
-export async function setSession(uid: number) {
-  const body = Buffer.from(JSON.stringify({ uid, exp: Date.now() + 1000 * 60 * 60 * 12 })).toString("base64url");
+export async function setSession(uid: number, kind: "desk" | "operator" = "desk") {
+  const body = Buffer.from(JSON.stringify({ uid, kind, exp: Date.now() + 1000 * 60 * 60 * 12 })).toString("base64url");
   const jar = await cookies();
   jar.set("lumen_session", `${body}.${sign(body)}`, {
     httpOnly: true,
@@ -74,8 +90,20 @@ export async function getSession(): Promise<Session | null> {
   if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
 
   try {
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as { uid?: number; exp?: number };
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as {
+      uid?: number;
+      exp?: number;
+      kind?: "desk" | "operator";
+    };
     if (!payload.uid || !payload.exp || payload.exp < Date.now()) return null;
+    if (payload.kind === "operator") {
+      const operator = one<{ id: number; email: string; name: string }>(
+        "SELECT id, email, name FROM platform_admins WHERE id = ?",
+        payload.uid,
+      );
+      if (!operator) return null;
+      return { kind: "operator", uid: operator.id, role: "operator", name: operator.name, email: operator.email } satisfies OperatorSession;
+    }
     const user = one<UserRow>(
       `SELECT u.id, u.email, u.password_hash, u.role, u.name, u.provider_id, u.is_owner,
               p.name AS brand_name, p.product_plan, p.logo_letter, p.support_phone
@@ -87,6 +115,7 @@ export async function getSession(): Promise<Session | null> {
     if (!user || !user.provider_id) return null;
     const productPlan = user.product_plan && isProductPlan(user.product_plan) ? user.product_plan : "free";
     return {
+      kind: "desk",
       uid: user.id,
       role: user.role,
       name: user.name,
@@ -97,24 +126,37 @@ export async function getSession(): Promise<Session | null> {
       brandName: user.brand_name || "Your ISP",
       logoLetter: user.logo_letter || "",
       supportPhone: user.support_phone || "",
-    };
+    } satisfies DeskSession;
   } catch {
     return null;
   }
 }
 
-export async function requireRole(role: Session["role"]) {
+export async function requireRole(role: DeskSession["role"]) {
   const session = await getSession();
   if (!session) redirect("/");
-  if (session.role !== role) redirect(session.role === "admin" ? "/admin" : "/portal");
+  if (session.kind !== "desk" || session.role !== role) redirect(homePath(session));
+  return session;
+}
+
+export async function requireOperator() {
+  const session = await getSession();
+  if (!session) redirect("/");
+  if (session.kind !== "operator") redirect(homePath(session));
   return session;
 }
 
 export function authenticate(email: string, password: string) {
+  const normalized = email.trim().toLowerCase();
   const user = one<Pick<UserRow, "id" | "email" | "password_hash" | "role" | "name">>(
     "SELECT id, email, password_hash, role, name FROM users WHERE email = ?",
-    email.trim().toLowerCase(),
+    normalized,
   );
-  if (!user || !verifyPassword(password, user.password_hash)) return null;
-  return user;
+  if (user && verifyPassword(password, user.password_hash)) return { ...user, kind: "desk" as const };
+  const operator = one<{ id: number; email: string; password_hash: string; name: string }>(
+    "SELECT id, email, password_hash, name FROM platform_admins WHERE email = ?",
+    normalized,
+  );
+  if (!operator || !verifyPassword(password, operator.password_hash)) return null;
+  return { id: operator.id, email: operator.email, role: "operator" as const, name: operator.name, kind: "operator" as const };
 }

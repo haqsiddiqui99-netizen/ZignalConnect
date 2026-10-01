@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { authenticate, clearSession, requireRole, setSession } from "@/lib/auth";
+import { authenticate, clearSession, requireOperator, requireRole, setSession } from "@/lib/auth";
 import { normalizeDate, parseCustomerCsv } from "@/lib/csv";
 import crypto from "crypto";
 import { getDb, many, one, run } from "@/lib/db";
@@ -39,6 +39,9 @@ function refresh() {
   revalidatePath("/admin/team");
   revalidatePath("/admin/reports");
   revalidatePath("/admin/complaints");
+  revalidatePath("/admin/support");
+  revalidatePath("/operator");
+  revalidatePath("/operator/support");
   revalidatePath("/portal");
   revalidatePath("/portal/pay");
   revalidatePath("/portal/history");
@@ -50,7 +53,8 @@ export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const user = authenticate(email, password);
   if (!user) go("/", { error: "Those credentials do not match an account." });
-  await setSession(user.id);
+  await setSession(user.id, user.kind);
+  if (user.kind === "operator") redirect("/operator");
   redirect(user.role === "admin" ? "/admin" : "/portal");
 }
 
@@ -736,4 +740,44 @@ export async function saveBrand(formData: FormData) {
   );
   refresh();
   go("/admin/billing", { notice: "ISP details saved." });
+}
+
+const SUPPORT_STATUSES = ["open", "in_progress", "resolved"] as const;
+
+export async function raiseSupport(formData: FormData) {
+  const session = await requireRole("admin");
+  const mobile = readText(formData, "mobile").replace(/\s+/g, "");
+  const message = readText(formData, "message");
+  if (!/^[6-9]\d{9}$/.test(mobile)) go("/admin/support", { error: "Enter a 10-digit mobile so Zignal Connect can call you." });
+  if (message.length < 8) go("/admin/support", { error: "Describe the concern in a sentence or two." });
+  if (message.length > 800) go("/admin/support", { error: "Keep the message under 800 characters." });
+  const stamp = nowStamp();
+  run(
+    `INSERT INTO support_requests (provider_id, user_id, mobile, message, status, reply, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'open', '', ?, ?)`,
+    session.providerId,
+    session.uid,
+    mobile,
+    message,
+    stamp,
+    stamp,
+  );
+  refresh();
+  go("/admin/support", { notice: "Sent to Zignal Connect. You can follow the reply on this page." });
+}
+
+export async function replySupport(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("request_id"));
+  const status = readText(formData, "status");
+  const reply = readText(formData, "reply");
+  if (!SUPPORT_STATUSES.includes(status as (typeof SUPPORT_STATUSES)[number])) {
+    go("/operator/support", { error: "Choose a status." });
+  }
+  if (reply.length > 800) go("/operator/support", { error: "Keep the reply under 800 characters." });
+  const ticket = one<{ id: number }>("SELECT id FROM support_requests WHERE id = ?", id);
+  if (!ticket) go("/operator/support", { error: "That message was not found." });
+  run("UPDATE support_requests SET status = ?, reply = ?, updated_at = ? WHERE id = ?", status, reply, nowStamp(), id);
+  refresh();
+  go("/operator/support", { notice: "Reply saved. The provider can see it on Zignal support." });
 }

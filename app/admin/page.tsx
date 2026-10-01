@@ -25,7 +25,8 @@ export default async function AdminHome() {
         <div>
           <h1>{greeting()}</h1>
           <p>
-            {session.brandName} is on {usage.catalog.label}. {stats.active} active lines. {stats.overdue} overdue. Booked monthly revenue is {formatInr(stats.booked)}.
+            {session.brandName} is on {usage.catalog.label}. {stats.active} active lines. {stats.overdue} overdue.
+            {session.isOwner ? ` Booked monthly revenue is ${formatInr(stats.booked)}.` : ""}
           </p>
         </div>
         <Link className="btn primary" href="/admin/customers/new">
@@ -48,15 +49,19 @@ export default async function AdminHome() {
           <Link href="/admin/import">Import</Link>
         </p>
       </article>
-      <section className="stats">
-        <article className="stat">
-          <span>Booked monthly</span>
-          <b>{formatInr(stats.booked)}</b>
-        </article>
-        <article className="stat">
-          <span>Collected this month</span>
-          <b className="money">{formatInr(stats.collected)}</b>
-        </article>
+      <section className={session.isOwner ? "stats" : "stats pair"}>
+        {session.isOwner ? (
+          <>
+            <article className="stat">
+              <span>Booked monthly</span>
+              <b>{formatInr(stats.booked)}</b>
+            </article>
+            <article className="stat">
+              <span>Collected this month</span>
+              <b className="money">{formatInr(stats.collected)}</b>
+            </article>
+          </>
+        ) : null}
         <article className="stat">
           <span>Due within 7 days</span>
           <b>{stats.due}</b>

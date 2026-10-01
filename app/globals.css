@@ -110,14 +110,28 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
   padding: 22px 16px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow: hidden;
 }
 .sidebar .brand-mark { width: 36px; height: 36px; font-size: 22px; }
 .sidebar .brand-lockup span { color: #c9b89a; }
-.side-nav { display: flex; flex-direction: column; gap: 4px; }
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(246, 241, 232, 0.45) transparent;
+}
+.side-nav::-webkit-scrollbar { width: 6px; }
+.side-nav::-webkit-scrollbar-track { background: transparent; }
+.side-nav::-webkit-scrollbar-thumb { background: rgba(246, 241, 232, 0.45); border-radius: 99px; }
+.side-nav::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .side-nav a {
   text-decoration: none;
   padding: 9px 12px;
@@ -125,7 +139,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
   color: #e7f0ea;
 }
 .side-nav a.active, .side-nav a:hover { background: rgba(255, 255, 255, 0.08); }
-.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; font-size: 14px; flex-shrink: 0; }
 .side-foot .fine { color: #c9b89a; }
 .side-foot .btn { border-color: rgba(246, 241, 232, 0.4); color: #f6f1e8; }
 .app-main { padding: 28px 32px 64px; }
@@ -134,6 +148,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
 .page-head p, .lede-sm { color: var(--muted); margin-top: 6px; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.stats.pair { grid-template-columns: repeat(2, 1fr); }
 .stat, .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -209,10 +224,10 @@ a.rowlink:hover { border-bottom-color: var(--ink); }
 .money { color: var(--copper); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 980px) {
-  .login, .app-shell, .split, .stats, .plan-grid { grid-template-columns: 1fr; }
+  .login, .app-shell, .split, .stats, .stats.pair, .plan-grid { grid-template-columns: 1fr; }
   .login-brand h1 { font-size: 46px; }
-  .sidebar { position: sticky; top: 0; height: auto; z-index: 2; }
-  .side-nav { flex-direction: row; overflow: auto; }
+  .sidebar { position: sticky; top: 0; height: auto; overflow: visible; z-index: 2; }
+  .side-nav { flex-direction: row; overflow: auto; flex: none; min-height: 0; }
   .side-foot { margin-top: 0; flex-direction: row; align-items: center; justify-content: space-between; }
   .app-main { padding: 20px 16px 48px; }
   .hero-card, .page-head { flex-direction: column; align-items: flex-start; }

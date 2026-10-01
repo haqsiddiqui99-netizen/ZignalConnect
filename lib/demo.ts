@@ -11,3 +11,9 @@ export const DEMO_CUSTOMER = {
   password: DEMO_CUSTOMER_PASSWORD,
   name: "Arjun Mehta",
 };
+
+export const DEMO_OPERATOR = {
+  email: "ops@zignal.connect",
+  password: "zignal123",
+  name: "Zignal Connect",
+};

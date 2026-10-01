@@ -12,6 +12,7 @@ const items = [
   { href: "/admin/complaints", label: "Complaints" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/team", label: "Team" },
+  { href: "/admin/support", label: "Zignal support" },
   { href: "/admin/billing", label: "Upgrade" },
 ];
 

@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { DEMO_ADMIN, DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
+import { DEMO_ADMIN, DEMO_CUSTOMER_PASSWORD, DEMO_OPERATOR } from "@/lib/demo";
 import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword } from "@/lib/password";
 
@@ -32,6 +32,20 @@ export function getDb() {
   if (!names.has("login_password")) {
     globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN login_password TEXT NOT NULL DEFAULT ''");
   }
+  ensurePlatformAdmin(globalForDb.lumenDb);
+  globalForDb.lumenDb.exec(`
+    CREATE TABLE IF NOT EXISTS support_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      mobile TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('open', 'in_progress', 'resolved')),
+      reply TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
   return globalForDb.lumenDb;
 }
 
@@ -228,6 +242,26 @@ function migrate(db: DatabaseSync) {
     db.exec("ALTER TABLE providers_next RENAME TO providers");
     db.exec("PRAGMA foreign_keys = ON");
   }
+}
+
+function ensurePlatformAdmin(db: DatabaseSync) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_admins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  const existing = db.prepare("SELECT id FROM platform_admins WHERE email = ?").get(DEMO_OPERATOR.email) as { id: number } | undefined;
+  if (existing) return;
+  db.prepare("INSERT INTO platform_admins (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)").run(
+    DEMO_OPERATOR.email,
+    hashPassword(DEMO_OPERATOR.password),
+    DEMO_OPERATOR.name,
+    nowStamp(),
+  );
 }
 
 function columnNames(db: DatabaseSync, table: string) {

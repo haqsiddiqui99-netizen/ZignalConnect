@@ -10,6 +10,9 @@ function cell(value: string | number) {
 
 export async function GET() {
   const session = await requireRole("admin");
+  if (!session.isOwner) {
+    return new Response("The collection report is for the owner.", { status: 403 });
+  }
   if (!allows(session.productPlan, "reports")) {
     return new Response("Collection export is part of Pro, Ultra, and Premium.", { status: 403 });
   }

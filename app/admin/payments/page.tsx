@@ -15,7 +15,8 @@ export default async function PaymentsPage() {
         <div>
           <h1>Payments</h1>
           <p>
-            {payments.length} receipts · {formatInr(total)} on the ledger.
+            {payments.length} receipts
+            {session.isOwner ? ` · ${formatInr(total)} on the ledger.` : "."}
           </p>
         </div>
       </header>

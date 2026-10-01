@@ -8,6 +8,21 @@ export const metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
   const session = await requireRole("admin");
+  if (!session.isOwner) {
+    return (
+      <>
+        <header className="page-head">
+          <div>
+            <h1>Reports</h1>
+            <p>The collection report is for the owner.</p>
+          </div>
+        </header>
+        <article className="card">
+          <p>Staff can see each subscriber’s receipts. The monthly total and the spreadsheet stay with the owner.</p>
+        </article>
+      </>
+    );
+  }
   if (!allows(session.productPlan, "reports")) {
     return (
       <>

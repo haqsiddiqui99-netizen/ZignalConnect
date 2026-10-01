@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { login } from "@/lib/actions";
-import { getSession } from "@/lib/auth";
+import { getSession, homePath } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { DEMO_ADMIN, DEMO_CUSTOMER } from "@/lib/demo";
+import { DEMO_ADMIN, DEMO_CUSTOMER, DEMO_OPERATOR } from "@/lib/demo";
 import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { Banner } from "@/components/ui";
@@ -15,7 +15,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const session = await getSession();
-  if (session) redirect(session.role === "admin" ? "/admin" : "/portal");
+  if (session) redirect(homePath(session));
   getDb();
   const { error } = await searchParams;
 
@@ -61,7 +61,7 @@ export default async function LoginPage({
       <section className="login-panel">
         <div className="panel-card">
           <h2>Sign in</h2>
-          <p className="fine">Provider staff and subscribers use the same door. The desk opens the right side from the account.</p>
+          <p className="fine">Provider staff, subscribers, and Zignal Connect use the same door. The account opens the right side.</p>
           <div style={{ height: 16 }} />
           <Banner error={error} />
           <form action={login} className="stack">
@@ -95,11 +95,20 @@ export default async function LoginPage({
                 Enter as subscriber
               </SubmitButton>
             </form>
+            <form action={login}>
+              <input type="hidden" name="email" value={DEMO_OPERATOR.email} />
+              <input type="hidden" name="password" value={DEMO_OPERATOR.password} />
+              <SubmitButton className="btn small" pendingLabel="Opening Zignal…">
+                Enter as Zignal
+              </SubmitButton>
+            </form>
           </div>
           <p className="fine" style={{ marginTop: 12 }}>
             Provider: {DEMO_ADMIN.email} / {DEMO_ADMIN.password}
             <br />
             Subscriber: {DEMO_CUSTOMER.email} / {DEMO_CUSTOMER.password}
+            <br />
+            Zignal Connect: {DEMO_OPERATOR.email} / {DEMO_OPERATOR.password}
             <br />
             Other seeded subscribers use the password welcome123.
           </p>

@@ -1,5 +1,5 @@
 import { many, one } from "@/lib/db";
-import { CATALOG, customerLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
+import { CATALOG, customerLimit, isProductPlan, staffLimit, type ProductPlan } from "@/lib/entitlements";
 import { addDays, monthBounds, todayISO } from "@/lib/format";
 
 export type Plan = {
@@ -327,4 +327,80 @@ export function collectionReport(providerId: number) {
   );
   const total = byPlan.reduce((sum, row) => sum + row.amount, 0);
   return { start, next, byPlan, byArea, total };
+}
+
+export type OperatorProvider = {
+  id: number;
+  name: string;
+  product_plan: string;
+  support_phone: string;
+  created_at: string;
+  subscribers: number;
+  active: number;
+  paused: number;
+  overdue: number;
+};
+
+export function operatorDesk() {
+  const today = todayISO();
+  const providers = many<OperatorProvider>(
+    `SELECT p.id, p.name, p.product_plan, p.support_phone, p.created_at,
+            (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id) AS subscribers,
+            (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'active') AS active,
+            (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'suspended') AS paused,
+            (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.renew_date < ?) AS overdue
+     FROM providers p
+     ORDER BY p.name`,
+    today,
+  ).map((provider) => ({
+    ...provider,
+    product_plan: isProductPlan(provider.product_plan) ? provider.product_plan : "free",
+  }));
+  const booked = providers.reduce((sum, provider) => sum + CATALOG[provider.product_plan].price, 0);
+  const plans = (Object.keys(CATALOG) as ProductPlan[]).map((plan) => ({
+    plan,
+    label: CATALOG[plan].label,
+    providers: providers.filter((provider) => provider.product_plan === plan).length,
+  }));
+  return {
+    providers,
+    booked,
+    plans,
+    subscribers: providers.reduce((sum, provider) => sum + provider.subscribers, 0),
+    active: providers.reduce((sum, provider) => sum + provider.active, 0),
+    paused: providers.reduce((sum, provider) => sum + provider.paused, 0),
+    overdue: providers.reduce((sum, provider) => sum + provider.overdue, 0),
+  };
+}
+
+export type SupportRequest = {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  user_id: number;
+  sender_name: string;
+  mobile: string;
+  message: string;
+  status: "open" | "in_progress" | "resolved";
+  reply: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function deskMobile(userId: number) {
+  return one<{ mobile: string }>("SELECT mobile FROM users WHERE id = ?", userId)?.mobile ?? "";
+}
+
+export function listSupport(scope: { providerId: number } | { all: true }) {
+  const where = "providerId" in scope ? "WHERE s.provider_id = ?" : "";
+  const params = "providerId" in scope ? [scope.providerId] : [];
+  return many<SupportRequest>(
+    `SELECT s.*, p.name AS provider_name, u.name AS sender_name
+     FROM support_requests s
+     JOIN providers p ON p.id = s.provider_id
+     JOIN users u ON u.id = s.user_id
+     ${where}
+     ORDER BY CASE s.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, s.id DESC`,
+    ...params,
+  );
 }

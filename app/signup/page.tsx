@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { registerProvider } from "@/lib/actions";
-import { getSession } from "@/lib/auth";
+import { getSession, homePath } from "@/lib/auth";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -13,7 +13,7 @@ export default async function SignupPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const session = await getSession();
-  if (session) redirect(session.role === "admin" ? "/admin" : "/portal");
+  if (session) redirect(homePath(session));
   const { error } = await searchParams;
 
   return (
