@@ -33,21 +33,29 @@ export default async function AdminHome() {
           Add subscriber
         </Link>
       </header>
-      <article className="card" style={{ marginBottom: 16 }}>
-        <strong>
-          {usage.customers} of {limitLabel(usage.customerCap)} customers
-        </strong>
-        <div className="meter" aria-hidden="true">
-          <span style={{ width: `${width}%` }} />
+      <article className="card usage-card" style={{ marginBottom: 16 }}>
+        <div className="usage-copy">
+          <strong>
+            {usage.customers} of {limitLabel(usage.customerCap)} customers
+          </strong>
+          <div className="meter" aria-hidden="true">
+            <span style={{ width: `${width}%` }} />
+          </div>
+          <p className="fine" style={{ marginTop: 8 }}>
+            {usage.trial.ended
+              ? `The trial ended on ${formatDate(usage.trial.ends)}. Adding subscribers is paused. Existing lines can still be billed. `
+              : usage.overflowSlots === 0
+                ? `Past the 10% overflow (${limitLabel(usage.overflowCap)}). Upgrade to the next tier to add more. `
+                : usage.overage > 0
+                  ? `${usage.overage} subscribers over the ${limitLabel(usage.customerCap)} cap, at ₹3 each (${formatInr(usage.overageDue)} this month). ${usage.overflowSlots} overflow slots left. `
+                  : `${limitLabel(usage.customerSlots)} customer slots left. A short overflow runs to ${limitLabel(usage.overflowCap)} at ₹3 each. `}
+            {usage.trial.active ? `Trial until ${formatDate(usage.trial.ends)}. The plan cap applies the whole time. ` : ""}
+            <Link href="/admin/import">Import</Link>
+          </p>
         </div>
-        <p className="fine" style={{ marginTop: 8 }}>
-          {usage.customerSlots === 0
-            ? "This plan is full. Upgrade to add or import more customers."
-            : `${limitLabel(usage.customerSlots)} customer slots left. Import a spreadsheet if you are moving an existing book.`}{" "}
-          <Link href="/admin/billing">See plans</Link>
-          {" · "}
-          <Link href="/admin/import">Import</Link>
-        </p>
+        <Link className="btn primary" href="/admin/billing">
+          Upgrade
+        </Link>
       </article>
       <section className={session.isOwner ? "stats" : "stats pair"}>
         {session.isOwner ? (

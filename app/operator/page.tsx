@@ -45,7 +45,8 @@ export default async function OperatorHome() {
         </p>
         <p className="fine" style={{ marginTop: 8 }}>
           {desk.plans.map((item) => `${item.label} ${item.providers}`).join(" · ")}. Fees are {formatInr(CATALOG.pro.price)}{" "}
-          Pro, {formatInr(CATALOG.ultra.price)} Ultra, {formatInr(CATALOG.premium.price)} Premium.
+          Pro, {formatInr(CATALOG.ultra.price)} Ultra, and {formatInr(CATALOG.premium_3000.price)} to{" "}
+          {formatInr(CATALOG.premium_30000.price)} across the Premium tiers.
         </p>
       </article>
       <article className="card">
@@ -58,6 +59,7 @@ export default async function OperatorHome() {
                 <tr>
                   <th>ISP</th>
                   <th>Plan</th>
+                  <th className="num">Book size</th>
                   <th>Opened</th>
                   <th>Support</th>
                   <th className="num">Subscribers</th>
@@ -71,6 +73,7 @@ export default async function OperatorHome() {
                   <tr key={provider.id}>
                     <td>{provider.name}</td>
                     <td>{CATALOG[provider.product_plan].label}</td>
+                    <td className="num">{provider.subscriber_base > 0 ? provider.subscriber_base : "—"}</td>
                     <td>{formatDate(provider.created_at)}</td>
                     <td>{provider.support_phone || "—"}</td>
                     <td className="num">{provider.subscribers}</td>

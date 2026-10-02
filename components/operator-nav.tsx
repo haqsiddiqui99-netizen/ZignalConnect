@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 
 const items = [
   { href: "/operator", label: "Providers", exact: true },
+  { href: "/operator/revenue", label: "Revenue" },
   { href: "/operator/support", label: "Support" },
+  { href: "/operator/settings", label: "Settings" },
 ];
 
 export function OperatorNav() {

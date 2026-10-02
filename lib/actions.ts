@@ -7,8 +7,19 @@ import { normalizeDate, parseCustomerCsv } from "@/lib/csv";
 import crypto from "crypto";
 import { getDb, many, one, run } from "@/lib/db";
 import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
-import { allows, CATALOG, customerLimit, isProductPlan, staffLimit, type ProductPlan } from "@/lib/entitlements";
 import {
+  allows,
+  CATALOG,
+  customerLimit,
+  isProductPlan,
+  limitLabel,
+  minimumPlan,
+  planFitsBase,
+  staffLimit,
+  type ProductPlan,
+} from "@/lib/entitlements";
+import {
+  addDays,
   formatDate,
   formatInr,
   isDate,
@@ -40,8 +51,11 @@ function refresh() {
   revalidatePath("/admin/reports");
   revalidatePath("/admin/complaints");
   revalidatePath("/admin/support");
+  revalidatePath("/admin/settings");
   revalidatePath("/operator");
   revalidatePath("/operator/support");
+  revalidatePath("/operator/revenue");
+  revalidatePath("/operator/settings");
   revalidatePath("/portal");
   revalidatePath("/portal/pay");
   revalidatePath("/portal/history");
@@ -114,14 +128,23 @@ function readSubscriberInput(
   };
 }
 
+function trialBlock(usage: ReturnType<typeof getUsage>) {
+  if (!usage.trial.ended) return "";
+  return `The ${usage.catalog.label} trial ended on ${formatDate(usage.trial.ends)}. This desk stays on ${usage.catalog.label} (${limitLabel(usage.customerCap)} subscribers). Adding subscribers is paused. Existing lines can still be billed.`;
+}
+
+function capBlock(usage: ReturnType<typeof getUsage>) {
+  if (usage.customers < usage.overflowCap) return "";
+  return `${usage.catalog.label} includes ${limitLabel(usage.customerCap)} subscribers, with a 10% overflow up to ${limitLabel(usage.overflowCap)}. Move to the next tier to add more.`;
+}
+
 export async function createSubscriber(formData: FormData) {
   const session = await requireRole("admin");
   const usage = getUsage(session.providerId);
-  if (usage.customers >= usage.customerCap) {
-    go("/admin/customers/new", {
-      error: `${usage.catalog.label} holds ${usage.customerCap} customers. Upgrade the desk to add more.`,
-    });
-  }
+  const paused = trialBlock(usage);
+  if (paused) go("/admin/customers/new", { error: paused });
+  const full = capBlock(usage);
+  if (full) go("/admin/customers/new", { error: full });
   const parsed = readSubscriberInput(formData, session.providerId, session.productPlan);
   if (!parsed.ok) go("/admin/customers/new", { error: parsed.error });
   const input = parsed.value;
@@ -462,23 +485,44 @@ export async function registerProvider(formData: FormData) {
   const email = readText(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
   const phone = readText(formData, "support_phone").replace(/\s+/g, "");
+  const plan = readText(formData, "product_plan");
+  const base = Number(readText(formData, "subscriber_base"));
   if (isp.length < 2) go("/signup", { error: "Enter your ISP name." });
   if (name.length < 2) go("/signup", { error: "Enter your name." });
   if (!/^\S+@\S+\.\S+$/.test(email)) go("/signup", { error: "Enter a valid email." });
   if (password.length < 6) go("/signup", { error: "Use at least 6 characters for the password." });
   if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/signup", { error: "Enter a 10-digit support number, or leave it blank." });
+  if (!Number.isInteger(base) || base < 1 || base > 1_000_000) {
+    go("/signup", { error: "Enter how many subscribers you have, as a whole number." });
+  }
+  if (!isProductPlan(plan)) go("/signup", { error: "Choose Pro, Ultra, or a Premium tier." });
+  if (base > CATALOG.premium_30000.customers) {
+    go("/signup", { error: `The largest desk is ${CATALOG.premium_30000.label} (${limitLabel(CATALOG.premium_30000.customers)} subscribers).` });
+  }
+  if (!planFitsBase(plan, base)) {
+    const fit = CATALOG[minimumPlan(base)];
+    go("/signup", {
+      error: `${CATALOG[plan].label} holds ${limitLabel(CATALOG[plan].customers)} subscribers. A book of ${base} needs ${fit.label}.`,
+    });
+  }
   if (one("SELECT id FROM users WHERE email = ?", email)) go("/signup", { error: "That email is already used for a login." });
 
+  const trialEnds = addDays(todayISO(), CATALOG[plan].trialDays);
   const db = getDb();
   let userId = 0;
   db.exec("BEGIN");
   try {
     const provider = run(
-      "INSERT INTO providers (name, product_plan, support_phone, logo_letter, created_at) VALUES (?, 'free', ?, ?, ?)",
+      `INSERT INTO providers
+        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       isp,
+      plan,
       phone,
       isp.trim().slice(0, 1).toUpperCase(),
       nowStamp(),
+      base,
+      trialEnds,
     );
     const user = run(
       "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",
@@ -495,7 +539,12 @@ export async function registerProvider(formData: FormData) {
     throw error;
   }
   await setSession(userId);
-  redirect("/admin/billing?notice=Your desk is on Free, with room for 10 customers.");
+  const chosen = CATALOG[plan];
+  redirect(
+    `/admin/billing?notice=${encodeURIComponent(
+      `${chosen.label} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.`,
+    )}`,
+  );
 }
 
 export async function importCustomers(formData: FormData) {
@@ -505,10 +554,12 @@ export async function importCustomers(formData: FormData) {
   if (parsed.rows.length === 0) go("/admin/import", { error: "There are no customer rows in that file." });
 
   const usage = getUsage(session.providerId);
+  const paused = trialBlock(usage);
+  if (paused) go("/admin/import", { error: paused });
   const plans = many<{ id: number; name: string }>("SELECT id, name FROM plans WHERE provider_id = ?", session.providerId);
   const planByName = new Map(plans.map((plan) => [plan.name.toLowerCase(), plan.id]));
   const seen = new Set<string>();
-  let slots = usage.customerSlots;
+  let slots = usage.overflowSlots;
   const issues: { line: number; message: string }[] = [];
   let imported = 0;
   const today = todayISO();
@@ -531,9 +582,7 @@ export async function importCustomers(formData: FormData) {
       else if (!renewDate || !installationDate) message = "Dates must be YYYY-MM-DD or DD/MM/YYYY.";
       else if (seen.has(row.email) || one("SELECT id FROM users WHERE email = ?", row.email)) message = "That email is already used.";
       else if (slots <= 0) {
-        message = Number.isFinite(usage.customerCap)
-          ? `${usage.catalog.label} allows ${usage.customerCap} customers. Upgrade to import the rest.`
-          : "No customer slots left.";
+        message = `${usage.catalog.label} includes ${limitLabel(usage.customerCap)} subscribers, with overflow up to ${limitLabel(usage.overflowCap)}. Upgrade to import the rest.`;
       }
       if (message) {
         issues.push({ line: row.line, message });
@@ -643,13 +692,13 @@ export async function changeProductPlan(formData: FormData) {
   const session = await requireRole("admin");
   if (!session.isOwner) go("/admin/billing", { error: "Only the desk owner can change the plan." });
   const nextPlan = readText(formData, "product_plan");
-  if (!isProductPlan(nextPlan)) go("/admin/billing", { error: "Choose Free, Pro, Ultra, or Premium." });
+  if (!isProductPlan(nextPlan)) go("/admin/billing", { error: "Choose Pro, Ultra, or a Premium tier." });
   const usage = getUsage(session.providerId);
   const nextCustomers = customerLimit(nextPlan);
   const nextStaff = staffLimit(nextPlan);
   if (usage.customers > nextCustomers) {
     go("/admin/billing", {
-      error: `${CATALOG[nextPlan].label} holds ${nextCustomers} customers. This desk has ${usage.customers}.`,
+      error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
     });
   }
   if (usage.staff > nextStaff) {
@@ -780,4 +829,69 @@ export async function replySupport(formData: FormData) {
   run("UPDATE support_requests SET status = ?, reply = ?, updated_at = ? WHERE id = ?", status, reply, nowStamp(), id);
   refresh();
   go("/operator/support", { notice: "Reply saved. The provider can see it on Zignal support." });
+}
+
+function readTheme(value: string) {
+  return value === "dark" ? "dark" : value === "light" ? "light" : "";
+}
+
+export async function saveDeskSettings(formData: FormData) {
+  const session = await requireRole("admin");
+  const name = readText(formData, "name");
+  const mobile = readText(formData, "mobile").replace(/\s+/g, "");
+  const theme = readTheme(readText(formData, "theme"));
+  if (name.length < 2) go("/admin/settings", { error: "Enter your name." });
+  if (mobile && !/^[6-9]\d{9}$/.test(mobile)) go("/admin/settings", { error: "Enter a 10-digit mobile, or leave it blank." });
+  if (!theme) go("/admin/settings", { error: "Choose light or dark." });
+  run("UPDATE users SET name = ?, mobile = ?, theme = ? WHERE id = ? AND provider_id = ?", name, mobile, theme, session.uid, session.providerId);
+  refresh();
+  go("/admin/settings", { notice: "Settings saved." });
+}
+
+export async function changeDeskPassword(formData: FormData) {
+  const session = await requireRole("admin");
+  const currentPassword = String(formData.get("current_password") ?? "");
+  const nextPassword = String(formData.get("new_password") ?? "");
+  const confirm = String(formData.get("confirm_password") ?? "");
+  const user = one<{ password_hash: string; is_owner: number }>("SELECT password_hash, is_owner FROM users WHERE id = ?", session.uid);
+  if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+    go("/admin/settings", { error: "The current password does not match." });
+  }
+  if (nextPassword.length < 6) go("/admin/settings", { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go("/admin/settings", { error: "The new password and confirmation do not match." });
+  run(
+    "UPDATE users SET password_hash = ?, login_password = ? WHERE id = ?",
+    hashPassword(nextPassword),
+    user.is_owner ? "" : nextPassword,
+    session.uid,
+  );
+  refresh();
+  go("/admin/settings", { notice: "Password updated." });
+}
+
+export async function saveOperatorSettings(formData: FormData) {
+  const session = await requireOperator();
+  const name = readText(formData, "name");
+  const theme = readTheme(readText(formData, "theme"));
+  if (name.length < 2) go("/operator/settings", { error: "Enter your name." });
+  if (!theme) go("/operator/settings", { error: "Choose light or dark." });
+  run("UPDATE platform_admins SET name = ?, theme = ? WHERE id = ?", name, theme, session.uid);
+  refresh();
+  go("/operator/settings", { notice: "Settings saved." });
+}
+
+export async function changeOperatorPassword(formData: FormData) {
+  const session = await requireOperator();
+  const currentPassword = String(formData.get("current_password") ?? "");
+  const nextPassword = String(formData.get("new_password") ?? "");
+  const confirm = String(formData.get("confirm_password") ?? "");
+  const user = one<{ password_hash: string }>("SELECT password_hash FROM platform_admins WHERE id = ?", session.uid);
+  if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+    go("/operator/settings", { error: "The current password does not match." });
+  }
+  if (nextPassword.length < 6) go("/operator/settings", { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go("/operator/settings", { error: "The new password and confirmation do not match." });
+  run("UPDATE platform_admins SET password_hash = ? WHERE id = ?", hashPassword(nextPassword), session.uid);
+  refresh();
+  go("/operator/settings", { notice: "Password updated." });
 }

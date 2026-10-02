@@ -26,8 +26,8 @@ export default async function ImportPage({
         <div>
           <h1>Import customers</h1>
           <p>
-            {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}.{" "}
-            {Number.isFinite(usage.customerSlots) ? `${usage.customerSlots} can be added from this file.` : "There is no customer cap."}
+            {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}. Overflow allows{" "}
+            {limitLabel(usage.overflowCap)}. {usage.overflowSlots} can be added from this file.
           </p>
         </div>
         <a className="btn" href="/admin/import/template">

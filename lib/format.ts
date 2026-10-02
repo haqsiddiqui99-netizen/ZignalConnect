@@ -81,6 +81,11 @@ export function connectionId(id: number) {
   return `LN-${1000 + id}`;
 }
 
+export function monthLabel(iso: string) {
+  const [y, m] = iso.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "short" });
+}
+
 export function monthBounds(today = todayISO()) {
   const start = `${today.slice(0, 7)}-01`;
   return { start, next: addMonths(start, 1) };

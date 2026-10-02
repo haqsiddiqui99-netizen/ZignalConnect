@@ -19,6 +19,7 @@ export type DeskSession = {
   brandName: string;
   logoLetter: string;
   supportPhone: string;
+  theme: "light" | "dark";
 };
 
 export type OperatorSession = {
@@ -27,6 +28,7 @@ export type OperatorSession = {
   role: "operator";
   name: string;
   email: string;
+  theme: "light" | "dark";
 };
 
 export type Session = DeskSession | OperatorSession;
@@ -48,6 +50,7 @@ type UserRow = {
   product_plan: string | null;
   logo_letter: string | null;
   support_phone: string | null;
+  theme: string | null;
 };
 
 function secret() {
@@ -97,15 +100,22 @@ export async function getSession(): Promise<Session | null> {
     };
     if (!payload.uid || !payload.exp || payload.exp < Date.now()) return null;
     if (payload.kind === "operator") {
-      const operator = one<{ id: number; email: string; name: string }>(
-        "SELECT id, email, name FROM platform_admins WHERE id = ?",
+      const operator = one<{ id: number; email: string; name: string; theme: string | null }>(
+        "SELECT id, email, name, theme FROM platform_admins WHERE id = ?",
         payload.uid,
       );
       if (!operator) return null;
-      return { kind: "operator", uid: operator.id, role: "operator", name: operator.name, email: operator.email } satisfies OperatorSession;
+      return {
+        kind: "operator",
+        uid: operator.id,
+        role: "operator",
+        name: operator.name,
+        email: operator.email,
+        theme: operator.theme === "dark" ? "dark" : "light",
+      } satisfies OperatorSession;
     }
     const user = one<UserRow>(
-      `SELECT u.id, u.email, u.password_hash, u.role, u.name, u.provider_id, u.is_owner,
+      `SELECT u.id, u.email, u.password_hash, u.role, u.name, u.provider_id, u.is_owner, u.theme,
               p.name AS brand_name, p.product_plan, p.logo_letter, p.support_phone
        FROM users u
        LEFT JOIN providers p ON p.id = u.provider_id
@@ -113,7 +123,7 @@ export async function getSession(): Promise<Session | null> {
       payload.uid,
     );
     if (!user || !user.provider_id) return null;
-    const productPlan = user.product_plan && isProductPlan(user.product_plan) ? user.product_plan : "free";
+    const productPlan = user.product_plan && isProductPlan(user.product_plan) ? user.product_plan : "pro";
     return {
       kind: "desk",
       uid: user.id,
@@ -126,6 +136,7 @@ export async function getSession(): Promise<Session | null> {
       brandName: user.brand_name || "Your ISP",
       logoLetter: user.logo_letter || "",
       supportPhone: user.support_phone || "",
+      theme: user.theme === "dark" ? "dark" : "light",
     } satisfies DeskSession;
   } catch {
     return null;

@@ -8,12 +8,13 @@ const items = [
   { href: "/admin/customers", label: "Subscribers" },
   { href: "/admin/import", label: "Import" },
   { href: "/admin/plans", label: "Plans" },
-  { href: "/admin/payments", label: "Payments" },
+  { href: "/admin/payments", label: "Revenue" },
   { href: "/admin/complaints", label: "Complaints" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/team", label: "Team" },
   { href: "/admin/support", label: "Zignal support" },
   { href: "/admin/billing", label: "Upgrade" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 export function AdminNav() {

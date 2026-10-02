@@ -5,7 +5,7 @@ import { DEMO_ADMIN, DEMO_CUSTOMER_PASSWORD, DEMO_OPERATOR } from "@/lib/demo";
 import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword } from "@/lib/password";
 
-const SCHEMA = 5;
+const SCHEMA = 6;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
 
 function openDatabase() {
@@ -32,7 +32,21 @@ export function getDb() {
   if (!names.has("login_password")) {
     globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN login_password TEXT NOT NULL DEFAULT ''");
   }
+  if (!names.has("theme")) {
+    globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'");
+  }
   ensurePlatformAdmin(globalForDb.lumenDb);
+  const operatorColumns = columnNames(globalForDb.lumenDb, "platform_admins");
+  if (!operatorColumns.has("theme")) {
+    globalForDb.lumenDb.exec("ALTER TABLE platform_admins ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'");
+  }
+  globalForDb.lumenDb.exec(`
+    CREATE TABLE IF NOT EXISTS platform_fee_months (
+      month TEXT PRIMARY KEY,
+      booked INTEGER NOT NULL,
+      providers INTEGER NOT NULL
+    );
+  `);
   globalForDb.lumenDb.exec(`
     CREATE TABLE IF NOT EXISTS support_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,7 +200,7 @@ function migrate(db: DatabaseSync) {
       else {
         const created = db
           .prepare(
-            "INSERT INTO providers (name, product_plan, support_phone, logo_letter, created_at) VALUES ('Lumen Fibre', 'free', '1800123456', 'L', ?)",
+            "INSERT INTO providers (name, product_plan, support_phone, logo_letter, created_at) VALUES ('Lumen Fibre', 'ultra', '1800123456', 'L', ?)",
           )
           .run(nowStamp());
         providerId = Number(created.lastInsertRowid);
@@ -238,6 +252,46 @@ function migrate(db: DatabaseSync) {
       `INSERT INTO providers_next (id, name, product_plan, support_phone, logo_letter, created_at)
        SELECT id, name, product_plan, support_phone, logo_letter, created_at FROM providers`,
     );
+    db.exec("DROP TABLE providers");
+    db.exec("ALTER TABLE providers_next RENAME TO providers");
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+
+  const providerColumns = columnNames(db, "providers");
+  if (!providerColumns.has("subscriber_base")) {
+    db.exec("ALTER TABLE providers ADD COLUMN subscriber_base INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!providerColumns.has("trial_ends")) {
+    db.exec("ALTER TABLE providers ADD COLUMN trial_ends TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec("UPDATE providers SET product_plan = 'pro' WHERE product_plan = 'free'");
+
+  const planSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'providers'").get() as
+    | { sql: string }
+    | undefined;
+  if (planSql && !planSql.sql.includes("'premium_3000'")) {
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE providers_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        product_plan TEXT NOT NULL DEFAULT 'pro' CHECK(product_plan IN (
+          'pro', 'ultra', 'premium_3000', 'premium_5000', 'premium_10000', 'premium_20000', 'premium_30000'
+        )),
+        support_phone TEXT NOT NULL DEFAULT '',
+        logo_letter TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        subscriber_base INTEGER NOT NULL DEFAULT 0,
+        trial_ends TEXT NOT NULL DEFAULT ''
+      );
+    `);
+    db.exec(`
+      INSERT INTO providers_next (id, name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends)
+      SELECT id, name,
+        CASE product_plan WHEN 'premium' THEN 'premium_3000' WHEN 'free' THEN 'pro' ELSE product_plan END,
+        support_phone, logo_letter, created_at, subscriber_base, trial_ends
+      FROM providers
+    `);
     db.exec("DROP TABLE providers");
     db.exec("ALTER TABLE providers_next RENAME TO providers");
     db.exec("PRAGMA foreign_keys = ON");
@@ -421,7 +475,7 @@ function seed(db: DatabaseSync) {
   try {
   const provider = db
     .prepare(
-      "INSERT INTO providers (name, product_plan, support_phone, logo_letter, created_at) VALUES ('Lumen Fibre', 'free', '1800123456', 'L', ?)",
+      "INSERT INTO providers (name, product_plan, support_phone, logo_letter, created_at) VALUES ('Lumen Fibre', 'ultra', '1800123456', 'L', ?)",
     )
     .run(stamp);
   const providerId = Number(provider.lastInsertRowid);

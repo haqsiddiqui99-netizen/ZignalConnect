@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getSession } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,9 +9,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await getSession();
+  const theme = session?.theme === "dark" ? "dark" : "light";
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <body>{children}</body>
     </html>
   );

@@ -1,0 +1,180 @@
+import Link from "next/link";
+import { requireOperator } from "@/lib/auth";
+import { RevenueChart } from "@/components/revenue-chart";
+import { addDays, addMonths, formatInr, formatStamp, isDate, todayISO } from "@/lib/format";
+import { listProviderPayments, paymentYears, zignalRevenue } from "@/lib/queries";
+
+export const metadata = { title: "Revenue" };
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const SORTS = [
+  { key: "paid_at", label: "When" },
+  { key: "provider", label: "Provider" },
+  { key: "subscriber", label: "Subscriber" },
+  { key: "method", label: "Method" },
+  { key: "reference", label: "Reference" },
+  { key: "amount", label: "Amount", num: true },
+  { key: "kind", label: "Kind" },
+];
+
+function rangeFromQuery(query: { year?: string; month?: string; from?: string; to?: string }) {
+  if (isDate(query.from ?? "") && isDate(query.to ?? "") && query.from! <= query.to!) {
+    return { from: query.from!, to: addDays(query.to!, 1) };
+  }
+  const year = Number(query.year);
+  if (Number.isInteger(year) && year >= 2000 && year <= 2100) {
+    const month = Number(query.month);
+    if (Number.isInteger(month) && month >= 1 && month <= 12) {
+      const from = `${year}-${String(month).padStart(2, "0")}-01`;
+      return { from, to: addMonths(from, 1) };
+    }
+    return { from: `${year}-01-01`, to: `${year + 1}-01-01` };
+  }
+  return {};
+}
+
+export default async function OperatorRevenue({
+  searchParams,
+}: {
+  searchParams: Promise<{ year?: string; month?: string; from?: string; to?: string; sort?: string; dir?: string }>;
+}) {
+  await requireOperator();
+  const query = await searchParams;
+  const range = rangeFromQuery(query);
+  const sort = SORTS.some((item) => item.key === query.sort) ? query.sort! : "paid_at";
+  const dir = query.dir === "asc" ? "asc" : "desc";
+  const revenue = zignalRevenue();
+  const payments = listProviderPayments({ ...range, sort, dir });
+  const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const years = paymentYears();
+
+  function keep(extra: Record<string, string>) {
+    const params = new URLSearchParams();
+    if (query.year) params.set("year", query.year);
+    if (query.month) params.set("month", query.month);
+    if (query.from) params.set("from", query.from);
+    if (query.to) params.set("to", query.to);
+    if (query.sort) params.set("sort", query.sort);
+    if (query.dir) params.set("dir", query.dir);
+    for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    const text = params.toString();
+    return text ? `/operator/revenue?${text}` : "/operator/revenue";
+  }
+
+  return (
+    <>
+      <header className="page-head">
+        <div>
+          <h1>Revenue</h1>
+          <p>
+            Booked desk fees for {revenue.providers} providers. These are the plan prices, not money collected from a
+            card.
+          </p>
+        </div>
+      </header>
+      <section className="stats trio">
+        <article className="stat">
+          <span>This month</span>
+          <b className="money">{formatInr(revenue.current)}</b>
+        </article>
+        <article className="stat">
+          <span>Last month</span>
+          <b>{revenue.past == null ? "Not recorded" : formatInr(revenue.past)}</b>
+        </article>
+        <article className="stat">
+          <span>Expected next month</span>
+          <b>{formatInr(revenue.expected)}</b>
+        </article>
+      </section>
+      <article className="card">
+        <h2>Fees by month</h2>
+        <RevenueChart points={revenue.series} />
+      </article>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Payments</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          {payments.length} receipts · {formatInr(total)}
+          {range.from ? ` from ${range.from} to ${addDays(range.to ?? todayISO(), -1)}.` : " on every provider desk."}
+        </p>
+        <form className="filters" action="/operator/revenue">
+          <label className="field">
+            <span>Year</span>
+            <select name="year" defaultValue={query.year ?? ""}>
+              <option value="">Any year</option>
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Month</span>
+            <select name="month" defaultValue={query.month ?? ""}>
+              <option value="">All months</option>
+              {MONTHS.map((label, index) => (
+                <option key={label} value={index + 1}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>From</span>
+            <input type="date" name="from" defaultValue={query.from ?? ""} />
+          </label>
+          <label className="field">
+            <span>To</span>
+            <input type="date" name="to" defaultValue={query.to ?? ""} />
+          </label>
+          <button className="btn small" type="submit">
+            Show payments
+          </button>
+          <Link className="btn small" href="/operator/revenue">
+            Clear
+          </Link>
+        </form>
+        <p className="fine" style={{ margin: "-6px 0 14px" }}>
+          Pick a year, or a year and month. A from and to date overrides the year. Month needs a year.
+        </p>
+        {payments.length === 0 ? (
+          <p>No payments in this range.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {SORTS.map((column) => {
+                    const active = sort === column.key;
+                    const nextDir = active && dir === "desc" ? "asc" : "desc";
+                    return (
+                      <th key={column.key} className={column.num ? "num" : undefined}>
+                        <Link href={keep({ sort: column.key, dir: nextDir })} scroll={false}>
+                          {column.label}
+                          {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                        </Link>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>{formatStamp(payment.paid_at)}</td>
+                    <td>{payment.provider_name}</td>
+                    <td>{payment.customer_name}</td>
+                    <td>{payment.method}</td>
+                    <td>{payment.reference}</td>
+                    <td className="num">{formatInr(payment.amount)}</td>
+                    <td>{payment.kind === "partial" ? "Partial" : "Full cycle"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+    </>
+  );
+}

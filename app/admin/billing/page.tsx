@@ -2,29 +2,11 @@ import { changeProductPlan, saveBrand } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { CATALOG, allows, limitLabel, type ProductPlan } from "@/lib/entitlements";
-import { formatInr } from "@/lib/format";
+import { CATALOG, PLAN_ORDER, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily } from "@/lib/entitlements";
+import { formatDate, formatInr } from "@/lib/format";
 import { getUsage } from "@/lib/queries";
 
 export const metadata = { title: "Upgrade" };
-
-const FEATURES: { label: string; plans: ProductPlan[] }[] = [
-  { label: "Subscriber desk, plans, and manual payments", plans: ["free", "pro", "ultra", "premium"] },
-  { label: "Subscribers raise connectivity complaints online", plans: ["free", "pro", "ultra", "premium"] },
-  { label: "Import customers from a spreadsheet", plans: ["free", "pro", "ultra", "premium"] },
-  { label: "Your ISP name on the subscriber portal", plans: ["pro", "ultra", "premium"] },
-  { label: "Renewal reminders at 3 days, 1 day, and the due date", plans: ["pro", "ultra", "premium"] },
-  { label: "Email renewal reminders", plans: ["pro", "ultra", "premium"] },
-  { label: "Collection report and export", plans: ["pro", "ultra", "premium"] },
-  { label: "8 staff logins", plans: ["pro"] },
-  { label: "20 staff logins", plans: ["ultra"] },
-  { label: "Unlimited staff", plans: ["premium"] },
-  { label: "Logo on the portal", plans: ["ultra", "premium"] },
-  { label: "SMS and WhatsApp reminders", plans: ["ultra", "premium"] },
-  { label: "Subscribers pay renewal online", plans: ["ultra", "premium"] },
-  { label: "Areas or branches", plans: ["ultra", "premium"] },
-  { label: "No customer cap", plans: ["premium"] },
-];
 
 export default async function BillingPage({
   searchParams,
@@ -43,17 +25,25 @@ export default async function BillingPage({
           <h1>Desk plan</h1>
           <p>
             {session.brandName} is on {usage.catalog.label}. {usage.customers} customers, {usage.staff} staff.
+            {usage.subscriberBase > 0 ? ` Registered book: ${usage.subscriberBase}.` : ""}
+            {usage.trial.active ? ` Trial runs until ${formatDate(usage.trial.ends)} (${usage.trial.daysLeft} days left).` : ""}
+            {usage.trial.ended ? ` Trial ended on ${formatDate(usage.trial.ends)}.` : ""}
+            {usage.overage > 0
+              ? ` ${usage.overage} subscribers are over the ${limitLabel(usage.customerCap)} cap (${formatInr(usage.overageDue)} at ₹3 each).`
+              : ""}
           </p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
       <p className="fine" style={{ marginBottom: 12 }}>
-        Choosing a plan switches this desk immediately. Collecting the monthly fee from a card is not connected yet.
+        Choosing a plan switches this desk immediately. The monthly fee, the ₹3 overflow, and extra messages at ₹0.50
+        are prices on the plan. A card charge is not connected yet.
       </p>
       <section className="plan-pick">
-        {(Object.keys(CATALOG) as ProductPlan[]).map((plan) => {
+        {PLAN_ORDER.map((plan) => {
           const item = CATALOG[plan];
           const current = plan === usage.plan;
+          const tooSmall = usage.customers > item.customers || usage.staff > item.staff;
           return (
             <article className={current ? "card current" : "card"} key={plan}>
               <p className="fine">{current ? "Current plan" : "Switch to"}</p>
@@ -64,14 +54,18 @@ export default async function BillingPage({
               <p className="fine">{item.price === 0 ? "to start" : "per month"}</p>
               <p style={{ margin: "10px 0" }}>{item.blurb}</p>
               <p className="fine">
-                {limitLabel(item.customers)} customers · {limitLabel(item.staff)} staff
+                {limitLabel(item.customers)} customers · {limitLabel(item.reminders)} reminders · {limitLabel(item.staff)}{" "}
+                staff · {item.trialDays}-day trial
               </p>
+              <p className="fine">Overflow to {limitLabel(overflowLimit(plan))} at ₹3 each. Extra messages ₹0.50.</p>
               <ul className="fine" style={{ paddingLeft: 18 }}>
-                {FEATURES.filter((feature) => feature.plans.includes(plan)).map((feature) => (
+                {PLAN_POINTS.filter((feature) => feature.plans.includes(planFamily(plan))).map((feature) => (
                   <li key={feature.label}>{feature.label}</li>
                 ))}
               </ul>
-              {current || !session.isOwner ? null : (
+              {current || !session.isOwner ? null : tooSmall ? (
+                <p className="fine">This desk is larger than {item.label}.</p>
+              ) : (
                 <form action={changeProductPlan}>
                   <input type="hidden" name="product_plan" value={plan} />
                   <SubmitButton className="btn small" pendingLabel="Switching…">
@@ -89,7 +83,7 @@ export default async function BillingPage({
         <p className="fine" style={{ marginBottom: 12 }}>
           {allows(session.productPlan, "customBrand")
             ? "Subscribers see this name on their portal."
-            : "On Free, subscribers still see Zignal. Pro, Ultra, and Premium show your ISP name."}
+            : "Subscribers see this name on their portal."}
         </p>
         {session.isOwner ? (
           <form action={saveBrand} className="stack">

@@ -33,24 +33,21 @@ export default async function LoginPage({
           <p className="eyebrow">Provider desk</p>
           <h1>Who is on the line, and when they renew.</h1>
           <p className="lede">
-            Each ISP gets a desk. Free covers 10 customers. Pro covers 500, Ultra covers 1,000, and Premium has no cap.
+            Each ISP picks a plan from its subscriber base. Pro holds 500, Ultra holds 1,000, and Premium runs from
+            3,000 to 30,000.
           </p>
           <div className="login-stats">
             <div>
-              <b>{formatInr(CATALOG.free.price)}</b>
-              <span>Free · 10 customers</span>
-            </div>
-            <div>
               <b>{formatInr(CATALOG.pro.price)}</b>
-              <span>Pro · 500 customers</span>
+              <span>Pro · 500 · {CATALOG.pro.trialDays}-day trial</span>
             </div>
             <div>
               <b>{formatInr(CATALOG.ultra.price)}</b>
-              <span>Ultra · 1,000 customers</span>
+              <span>Ultra · 1,000 · {CATALOG.ultra.trialDays}-day trial</span>
             </div>
             <div>
-              <b>{formatInr(CATALOG.premium.price)}</b>
-              <span>Premium · unlimited</span>
+              <b>from {formatInr(CATALOG.premium_3000.price)}</b>
+              <span>Premium · 3,000 to 30,000 · {CATALOG.premium_3000.trialDays}-day trial</span>
             </div>
           </div>
         </div>
@@ -76,7 +73,7 @@ export default async function LoginPage({
             <SubmitButton>Sign in</SubmitButton>
           </form>
           <p className="fine" style={{ marginTop: 14 }}>
-            New ISP? <Link href="/signup">Open a free desk</Link>
+            New ISP? <Link href="/signup">Open a desk</Link>
           </p>
           <div style={{ height: 22 }} />
           <p className="fine">Demo accounts on this computer</p>

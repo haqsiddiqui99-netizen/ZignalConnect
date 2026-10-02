@@ -33,7 +33,7 @@ export default async function ReportsPage() {
           </div>
         </header>
         <article className="card">
-          <p>Free keeps the payment list. The monthly report opens when this desk is on Pro.</p>
+          <p>The monthly report is part of every desk plan.</p>
           <p style={{ marginTop: 12 }}>
             <Link className="btn primary" href="/admin/billing">
               See plans
