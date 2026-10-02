@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { createSubscriber, updateSubscriber } from "@/lib/actions";
+import { BILL_CYCLES } from "@/lib/bill-cycle";
 import { LINE_STATUSES } from "@/lib/line-status";
 import { addMonths, todayISO } from "@/lib/format";
 import type { Plan, Subscriber } from "@/lib/queries";
@@ -65,6 +67,25 @@ export function SubscriberForm({
       </div>
       <div className="row-2">
         <label className="field">
+          <span>Bill cycle</span>
+          <select name="bill_cycle" defaultValue={subscriber?.bill_cycle ?? "monthly"}>
+            {BILL_CYCLES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Payment reminders</span>
+          <select name="reminders" defaultValue={subscriber && !subscriber.reminders ? "off" : "on"}>
+            <option value="on">Send reminders</option>
+            <option value="off">Do not send reminders</option>
+          </select>
+        </label>
+      </div>
+      <div className="row-2">
+        <label className="field">
           <span>Renewal date</span>
           <input type="date" name="renew_date" required defaultValue={subscriber?.renew_date ?? addMonths(today, 1)} />
         </label>
@@ -83,8 +104,13 @@ export function SubscriberForm({
         <span>Notes</span>
         <textarea name="notes" defaultValue={subscriber?.notes ?? ""} placeholder="Access notes, preferred contact time, equipment location" />
       </label>
-      <div>
+      <div className="demo-row">
         <SubmitButton>{subscriber ? "Save subscriber" : "Add subscriber"}</SubmitButton>
+        {subscriber ? null : (
+          <Link className="btn" href="/provider/import">
+            Import customers
+          </Link>
+        )}
       </div>
     </form>
   );

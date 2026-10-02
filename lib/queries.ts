@@ -1,6 +1,7 @@
 import { many, one, run } from "@/lib/db";
 import { CATALOG, OVERAGE_RATE, customerLimit, isProductPlan, overflowLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
+import type { BillCycle } from "@/lib/bill-cycle";
 import { addDays, addMonths, daysUntil, monthBounds, monthLabel, todayISO } from "@/lib/format";
 
 export type Plan = {
@@ -32,6 +33,8 @@ export type Subscriber = {
   renew_date: string;
   installation_date: string;
   notes: string;
+  bill_cycle: BillCycle;
+  reminders: number;
 };
 
 export type Payment = {
@@ -99,7 +102,8 @@ const subscriberSelect = `
   SELECT
     c.id, c.user_id, u.name, u.email, c.mobile, c.address, c.city, c.area, c.status,
     c.plan_id, p.name AS plan_name, p.speed_mbps, p.price, p.data_cap,
-    p.description AS plan_description, c.renew_date, c.installation_date, c.notes
+    p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
+    c.bill_cycle, c.reminders
   FROM customers c
   JOIN users u ON u.id = c.user_id
   JOIN plans p ON p.id = c.plan_id
@@ -369,16 +373,18 @@ export function dashboard(providerId: number) {
 
 export type ImportIssue = { line: number; message: string };
 
-export function getImportReport(providerId: number, batchId?: number) {
+export function getImportReport(providerId: number, batchId?: number, kind: "customers" | "plans" = "customers") {
   const batch = batchId
     ? one<{ id: number; imported: number; skipped: number; created_at: string }>(
-        "SELECT id, imported, skipped, created_at FROM import_batches WHERE id = ? AND provider_id = ?",
+        "SELECT id, imported, skipped, created_at FROM import_batches WHERE id = ? AND provider_id = ? AND kind = ?",
         batchId,
         providerId,
+        kind,
       )
     : one<{ id: number; imported: number; skipped: number; created_at: string }>(
-        "SELECT id, imported, skipped, created_at FROM import_batches WHERE provider_id = ? ORDER BY id DESC LIMIT 1",
+        "SELECT id, imported, skipped, created_at FROM import_batches WHERE provider_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
         providerId,
+        kind,
       );
   if (!batch) return null;
   const issues = many<ImportIssue>("SELECT line, message FROM import_issues WHERE batch_id = ? ORDER BY line", batch.id);

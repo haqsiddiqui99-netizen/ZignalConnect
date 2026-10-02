@@ -7,6 +7,7 @@ import { Banner, LineId, StatusPill } from "@/components/ui";
 import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import { requireRole } from "@/lib/auth";
 import { allows } from "@/lib/entitlements";
+import { billCycleAdvance, billCycleLabel, cycleAmount } from "@/lib/bill-cycle";
 import { connectionId, formatDate, formatInr, formatSpeed, formatStamp } from "@/lib/format";
 import { getSubscriber, listPayments, listPlans, listReminders } from "@/lib/queries";
 
@@ -74,15 +75,16 @@ export default async function CustomerDetailPage({
           <article className="card">
             <h2>Record manual payment</h2>
             <p className="fine" style={{ marginBottom: 12 }}>
-              {person.plan_name} is {formatSpeed(person.speed_mbps)} · {person.data_cap} · {formatInr(person.price)} a month.
-              A full payment moves renewal to one month out and turns the line back on. A smaller amount is stored as a partial payment.
+              {person.plan_name} is {formatSpeed(person.speed_mbps)} · {person.data_cap} · {formatInr(person.price)} a month, billed{" "}
+              {billCycleLabel(person.bill_cycle).toLowerCase()} ({formatInr(cycleAmount(person.price, person.bill_cycle))}). A full payment moves renewal{" "}
+              {billCycleAdvance(person.bill_cycle)} ahead and turns the line back on. A smaller amount is stored as a partial payment.
             </p>
             <form action={recordPayment} className="stack">
               <input type="hidden" name="customer_id" value={person.id} />
               <div className="row-2">
                 <label className="field">
                   <span>Amount (₹)</span>
-                  <input name="amount" type="number" min={1} step={1} required defaultValue={person.price} />
+                  <input name="amount" type="number" min={1} step={1} required defaultValue={cycleAmount(person.price, person.bill_cycle)} />
                 </label>
                 <label className="field">
                   <span>Method</span>
@@ -103,6 +105,7 @@ export default async function CustomerDetailPage({
           </article>
           <article className="card">
             <h2>Send a reminder</h2>
+            {person.reminders ? (
             <form action={sendReminder} className="stack">
               <input type="hidden" name="customer_id" value={person.id} />
               <label className="field">
@@ -134,6 +137,9 @@ export default async function CustomerDetailPage({
                 Send custom reminder
               </SubmitButton>
             </form>
+            ) : (
+              <p className="fine">Payment reminders are off for this line. Turn them on in the service record to send one.</p>
+            )}
           </article>
         </div>
       </section>

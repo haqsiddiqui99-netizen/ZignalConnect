@@ -91,9 +91,9 @@ export function monthBounds(today = todayISO()) {
   return { start, next: addMonths(start, 1) };
 }
 
-export function renewalAfterPayment(currentRenew: string, today = todayISO()) {
+export function renewalAfterPayment(currentRenew: string, today = todayISO(), months = 1) {
   const base = currentRenew > today ? currentRenew : today;
-  return addMonths(base, 1);
+  return addMonths(base, months);
 }
 
 export function makeRef() {

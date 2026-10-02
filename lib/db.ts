@@ -35,6 +35,13 @@ export function getDb() {
   if (!names.has("theme")) {
     globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'");
   }
+  const customerColumns = columnNames(globalForDb.lumenDb, "customers");
+  if (customerColumns.size > 0 && !customerColumns.has("bill_cycle")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN bill_cycle TEXT NOT NULL DEFAULT 'monthly'");
+  }
+  if (customerColumns.size > 0 && !customerColumns.has("reminders")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN reminders INTEGER NOT NULL DEFAULT 1");
+  }
   ensurePlatformAdmin(globalForDb.lumenDb);
   const operatorColumns = columnNames(globalForDb.lumenDb, "platform_admins");
   if (!operatorColumns.has("theme")) {
@@ -148,7 +155,8 @@ function migrate(db: DatabaseSync) {
       provider_id INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       imported INTEGER NOT NULL,
-      skipped INTEGER NOT NULL
+      skipped INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'customers'
     );
 
     CREATE TABLE IF NOT EXISTS import_issues (
@@ -172,6 +180,12 @@ function migrate(db: DatabaseSync) {
   }
   if (!columnNames(db, "customers").has("area")) {
     db.exec("ALTER TABLE customers ADD COLUMN area TEXT NOT NULL DEFAULT ''");
+  }
+  if (!columnNames(db, "customers").has("bill_cycle")) {
+    db.exec("ALTER TABLE customers ADD COLUMN bill_cycle TEXT NOT NULL DEFAULT 'monthly'");
+  }
+  if (!columnNames(db, "customers").has("reminders")) {
+    db.exec("ALTER TABLE customers ADD COLUMN reminders INTEGER NOT NULL DEFAULT 1");
   }
   ensureLineStatuses(db);
   if (!columnNames(db, "reminders").has("channel")) {
@@ -313,6 +327,11 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("city")) db.exec("ALTER TABLE providers ADD COLUMN city TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("state")) db.exec("ALTER TABLE providers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
 
+  const batchColumns = columnNames(db, "import_batches");
+  if (batchColumns.size > 0 && !batchColumns.has("kind")) {
+    db.exec("ALTER TABLE import_batches ADD COLUMN kind TEXT NOT NULL DEFAULT 'customers'");
+  }
+
   const paymentColumns = columnNames(db, "payments");
   if (!paymentColumns.has("receipt_snapshot")) {
     db.exec("ALTER TABLE payments ADD COLUMN receipt_snapshot TEXT NOT NULL DEFAULT ''");
@@ -363,6 +382,23 @@ function ensureReceiptSchema(db: DatabaseSync) {
   db.prepare(
     `INSERT OR IGNORE INTO platform_profile (id, legal_name, email) VALUES (1, 'Zignal Connect', ?)`,
   ).run(DEMO_OPERATOR.email);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upgrade_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      product_plan TEXT NOT NULL,
+      subscriber_base INTEGER NOT NULL,
+      plan_label TEXT NOT NULL,
+      plan_amount INTEGER NOT NULL,
+      tax INTEGER NOT NULL,
+      total INTEGER NOT NULL,
+      gst_mode TEXT NOT NULL CHECK(gst_mode IN ('none', 'cgst', 'igst')),
+      status TEXT NOT NULL CHECK(status IN ('pending', 'paid')) DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      paid_at TEXT NOT NULL DEFAULT ''
+    );
+  `);
 }
 
 function ensureLineStatuses(db: DatabaseSync) {

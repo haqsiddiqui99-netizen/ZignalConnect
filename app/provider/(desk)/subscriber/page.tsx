@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
+import { billCycleLabel } from "@/lib/bill-cycle";
 import { formatDate, formatInr } from "@/lib/format";
 import { listSubscribers } from "@/lib/queries";
 import { Banner, LineId, StatusPill } from "@/components/ui";
@@ -81,7 +82,10 @@ export default async function CustomersPage({
                       {person.mobile}
                       <div className="fine">{person.email}</div>
                     </td>
-                    <td>{person.plan_name}</td>
+                    <td>
+                      {person.plan_name}
+                      <div className="fine">{billCycleLabel(person.bill_cycle)}</div>
+                    </td>
                     <td>{formatDate(person.renew_date)}</td>
                     <td className="num">{formatInr(person.price)}</td>
                     <td>

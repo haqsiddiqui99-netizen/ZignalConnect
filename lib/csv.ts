@@ -1,8 +1,12 @@
 import { isDate } from "@/lib/format";
 import { lineStatusFromImport, type LineStatus } from "@/lib/line-status";
 
-export const CSV_TEMPLATE = `name,email,mobile,address,city,plan,renewal date,installation date,status,notes,area
-Arjun Mehta,arjun.mehta@mail.com,9820091104,"14, Pali Hill Road",Mumbai,Home 300,2026-11-01,2026-02-01,active,ONT in the living room,West
+export const CSV_TEMPLATE = `name,email,mobile,address,city,plan,renewal date,installation date,status,notes,area,bill cycle,reminders
+Arjun Mehta,arjun.mehta@mail.com,9820091104,"14, Pali Hill Road",Mumbai,Home 300,2026-11-01,2026-02-01,active,ONT in the living room,West,monthly,yes
+`;
+
+export const PLAN_CSV_TEMPLATE = `name,speed,price,data,description
+Home 200,200,799,Unlimited,A mid-speed line for a small household.
 `;
 
 export type ImportRow = {
@@ -18,6 +22,8 @@ export type ImportRow = {
   status: LineStatus;
   notes: string;
   area: string;
+  billCycle: string;
+  reminders: string;
 };
 
 const HEADER_MAP: Record<string, keyof Omit<ImportRow, "line">> = {
@@ -40,6 +46,11 @@ const HEADER_MAP: Record<string, keyof Omit<ImportRow, "line">> = {
   note: "notes",
   area: "area",
   branch: "area",
+  "bill cycle": "billCycle",
+  bill_cycle: "billCycle",
+  cycle: "billCycle",
+  reminders: "reminders",
+  reminder: "reminders",
 };
 
 function parseTable(text: string) {
@@ -94,6 +105,70 @@ export function normalizeDate(value: string) {
   return isDate(iso) ? iso : null;
 }
 
+export type PlanImportRow = {
+  line: number;
+  name: string;
+  speed: string;
+  price: string;
+  data: string;
+  description: string;
+};
+
+const PLAN_HEADER_MAP: Record<string, keyof Omit<PlanImportRow, "line">> = {
+  name: "name",
+  "plan name": "name",
+  plan: "name",
+  speed: "speed",
+  "speed mbps": "speed",
+  speed_mbps: "speed",
+  mbps: "speed",
+  price: "price",
+  "monthly price": "price",
+  amount: "price",
+  data: "data",
+  "data cap": "data",
+  data_cap: "data",
+  description: "description",
+};
+
+export function wholeUnits(value: string) {
+  const cleaned = value.replace(/[₹,\s]/g, "").replace(/mbps|rs\.?|inr/gi, "");
+  if (!/^\d+$/.test(cleaned)) return null;
+  const amount = Number(cleaned);
+  return amount > 0 ? amount : null;
+}
+
+export function parsePlanCsv(text: string): { rows: PlanImportRow[]; error?: string } {
+  const table = parseTable(text);
+  if (table.length < 2) return { rows: [], error: "The file needs a header row and at least one plan." };
+  const headers = table[0].map((header) => header.toLowerCase().replace(/\(.*?\)/g, "").trim());
+  const index = new Map<keyof Omit<PlanImportRow, "line">, number>();
+  headers.forEach((header, position) => {
+    const key = PLAN_HEADER_MAP[header];
+    if (key && !index.has(key)) index.set(key, position);
+  });
+  for (const required of ["name", "speed", "price", "description"] as const) {
+    if (!index.has(required)) {
+      return { rows: [], error: "The header must include name, speed, price, and description." };
+    }
+  }
+  const rows = table.slice(1).map((cells, offset) => {
+    const pick = (key: keyof Omit<PlanImportRow, "line">) => {
+      const position = index.get(key);
+      return position === undefined ? "" : (cells[position] ?? "");
+    };
+    return {
+      line: offset + 2,
+      name: pick("name"),
+      speed: pick("speed"),
+      price: pick("price"),
+      data: pick("data"),
+      description: pick("description"),
+    };
+  });
+  return { rows };
+}
+
 export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: string } {
   const table = parseTable(text);
   if (table.length < 2) return { rows: [], error: "The file needs a header row and at least one customer." };
@@ -128,6 +203,8 @@ export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: str
       status,
       notes: pick("notes"),
       area: pick("area"),
+      billCycle: pick("billCycle"),
+      reminders: pick("reminders"),
     };
   });
   return { rows };

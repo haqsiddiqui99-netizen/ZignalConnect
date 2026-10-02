@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { payBill } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
+import { PayMethods } from "@/components/pay-methods";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { allows } from "@/lib/entitlements";
-import { formatDate, formatInr, formatSpeed, renewalAfterPayment } from "@/lib/format";
+import { billCycleAdvance, billCycleLabel, billCycleMonths, cycleAmount } from "@/lib/bill-cycle";
+import { formatDate, formatInr, formatSpeed, renewalAfterPayment, todayISO } from "@/lib/format";
 import { getSubscriberByUserId } from "@/lib/queries";
 
 export const metadata = { title: "Pay bill" };
@@ -19,7 +21,8 @@ export default async function PayPage({
   const { error } = await searchParams;
   const person = getSubscriberByUserId(session.uid);
   if (!person) notFound();
-  const nextDate = renewalAfterPayment(person.renew_date);
+  const due = cycleAmount(person.price, person.bill_cycle);
+  const nextDate = renewalAfterPayment(person.renew_date, todayISO(), billCycleMonths(person.bill_cycle));
 
   return (
     <>
@@ -32,39 +35,28 @@ export default async function PayPage({
         <div>
           <h1>Pay renewal</h1>
           <p>
-            {person.plan_name} · {formatSpeed(person.speed_mbps)} · due {formatDate(person.renew_date)}
+            {person.plan_name} · {formatSpeed(person.speed_mbps)} · {billCycleLabel(person.bill_cycle).toLowerCase()} · due {formatDate(person.renew_date)}
           </p>
         </div>
       </header>
       <Banner error={error} />
       <article className="card" style={{ maxWidth: 640 }}>
         <p className="hero-price" style={{ color: "var(--ink)" }}>
-          {formatInr(person.price)}
+          {formatInr(due)}
         </p>
         {allows(session.productPlan, "onlinePay") ? (
           <>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
-          Paying this moves your renewal to {formatDate(nextDate)}. If the line is paused, it comes back on. This records the payment on the provider desk and does not charge a real card or UPI account.
+          Paying this {billCycleLabel(person.bill_cycle).toLowerCase()} bill moves your renewal {billCycleAdvance(person.bill_cycle)} ahead, to {formatDate(nextDate)}. If the line is paused, it comes back on. This records the payment on the provider desk and does not charge a real card or UPI account.
         </p>
         <form action={payBill} className="stack">
-          <div className="choices">
-            {["UPI", "Card", "Net banking"].map((method, index) => (
-              <label className="choice" key={method}>
-                <input type="radio" name="method" value={method} defaultChecked={index === 0} />
-                <span>{method}</span>
-              </label>
-            ))}
-          </div>
-          <label className="field">
-            <span>UPI id or card last 4 (optional)</span>
-            <input name="detail" placeholder="name@upi or 4242" autoComplete="off" />
-          </label>
-          <SubmitButton pendingLabel="Recording payment…">Pay {formatInr(person.price)}</SubmitButton>
+          <PayMethods />
+          <SubmitButton pendingLabel="Recording payment…">Pay {formatInr(due)}</SubmitButton>
         </form>
           </>
         ) : (
           <p style={{ marginTop: 12 }}>
-            Online renewal is not on this connection. Pay {formatInr(person.price)} at the office
+            Online renewal is not on this connection. Pay {formatInr(due)} at the office
             {session.supportPhone ? ` or call ${session.supportPhone}` : ""}. The provider records it on your line.
           </p>
         )}

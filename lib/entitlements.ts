@@ -151,6 +151,29 @@ export function minimumPlan(base: number): ProductPlan {
   return PLAN_ORDER.find((plan) => base <= CATALOG[plan].customers) ?? "premium_30000";
 }
 
+export const PREMIUM_PLANS = PLAN_ORDER.filter((plan) => planFamily(plan) === "premium");
+
+export function quotePremium(base: number):
+  | { ok: true; plan: ProductPlan }
+  | { ok: false; custom?: boolean; error: string } {
+  if (!Number.isInteger(base) || base < 1) {
+    return { ok: false, error: "Enter the subscriber base as a whole number." };
+  }
+  const ceiling = CATALOG.premium_30000.customers;
+  if (base > ceiling) {
+    return {
+      ok: false,
+      custom: true,
+      error: `A book above ${limitLabel(ceiling)} subscribers is a custom offer.`,
+    };
+  }
+  const plan = PREMIUM_PLANS.find((item) => base <= CATALOG[item].customers);
+  if (!plan) {
+    return { ok: false, custom: true, error: `A book above ${limitLabel(ceiling)} subscribers is a custom offer.` };
+  }
+  return { ok: true, plan };
+}
+
 export function portalBrand(plan: ProductPlan, ispName: string, logoLetter: string) {
   const letter = logoLetter.trim().slice(0, 2).toUpperCase();
   const mark = allows(plan, "logo") && letter ? letter : ispName.trim().slice(0, 1).toUpperCase() || "Z";

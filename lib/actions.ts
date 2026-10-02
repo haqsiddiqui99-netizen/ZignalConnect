@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { authenticate, clearSession, getSession, requireOperator, requireRole, setSession } from "@/lib/auth";
-import { normalizeDate, parseCustomerCsv } from "@/lib/csv";
+import { normalizeDate, parseCustomerCsv, parsePlanCsv, wholeUnits } from "@/lib/csv";
 import crypto from "crypto";
 import { getDb, many, one, run } from "@/lib/db";
 import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
@@ -15,6 +15,7 @@ import {
   limitLabel,
   minimumPlan,
   planFitsBase,
+  quotePremium,
   staffLimit,
   type ProductPlan,
 } from "@/lib/entitlements";
@@ -30,8 +31,17 @@ import {
 } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
-import { cleanGstin, isGstin, isIndianState } from "@/lib/tax";
-import { getSubscriber, getUsage } from "@/lib/queries";
+import {
+  billCycleFromImport,
+  billCycleMonths,
+  cycleAmount,
+  isBillCycle,
+  remindersFromImport,
+  type BillCycle,
+} from "@/lib/bill-cycle";
+import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax";
+import { collectUpgradePayment, markUpgradePaid, type UpgradeOrder } from "@/lib/checkout";
+import { getPlatformProfile, getSubscriber, getUsage } from "@/lib/queries";
 
 function go(path: string, params?: Record<string, string>): never {
   const query = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -91,6 +101,8 @@ type SubscriberInput = {
   status: LineStatus;
   notes: string;
   area: string;
+  billCycle: BillCycle;
+  reminders: number;
 };
 
 function readSubscriberInput(
@@ -109,6 +121,8 @@ function readSubscriberInput(
   const status = readText(formData, "status");
   const notes = readText(formData, "notes");
   const area = allows(plan, "areas") ? readText(formData, "area") : "";
+  const billCycle = readText(formData, "bill_cycle");
+  const reminders = readText(formData, "reminders") === "off" ? 0 : 1;
 
   if (name.length < 2) return { ok: false, error: "Enter the subscriber's name." };
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email for the portal login." };
@@ -118,6 +132,7 @@ function readSubscriberInput(
   if (!Number.isInteger(planId) || planId <= 0) return { ok: false, error: "Choose a plan." };
   if (!isDate(renewDate) || !isDate(installationDate)) return { ok: false, error: "Enter both dates." };
   if (!isLineStatus(status)) return { ok: false, error: "Choose a line status." };
+  if (!isBillCycle(billCycle)) return { ok: false, error: "Choose a bill cycle." };
   if (notes.length > 500) return { ok: false, error: "Keep notes under 500 characters." };
   if (area.length > 80) return { ok: false, error: "Keep the area name short." };
   if (!one("SELECT id FROM plans WHERE id = ? AND provider_id = ?", planId, providerId)) {
@@ -126,7 +141,21 @@ function readSubscriberInput(
 
   return {
     ok: true,
-    value: { name, email, mobile, address, city, planId, renewDate, installationDate, status, notes, area },
+    value: {
+      name,
+      email,
+      mobile,
+      address,
+      city,
+      planId,
+      renewDate,
+      installationDate,
+      status,
+      notes,
+      area,
+      billCycle,
+      reminders,
+    },
   };
 }
 
@@ -169,8 +198,8 @@ export async function createSubscriber(formData: FormData) {
     );
     const customer = run(
       `INSERT INTO customers
-        (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       Number(user.lastInsertRowid),
       input.mobile,
       input.address,
@@ -181,6 +210,8 @@ export async function createSubscriber(formData: FormData) {
       input.installationDate,
       input.notes,
       input.area,
+      input.billCycle,
+      input.reminders,
     );
     customerId = Number(customer.lastInsertRowid);
     db.exec("COMMIT");
@@ -213,7 +244,7 @@ export async function updateSubscriber(formData: FormData) {
     run("UPDATE users SET name = ?, email = ? WHERE id = ?", input.name, input.email, current.user_id);
     run(
       `UPDATE customers
-       SET mobile = ?, address = ?, city = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?
+       SET mobile = ?, address = ?, city = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?, bill_cycle = ?, reminders = ?
        WHERE id = ?`,
       input.mobile,
       input.address,
@@ -224,6 +255,8 @@ export async function updateSubscriber(formData: FormData) {
       input.installationDate,
       input.notes,
       allows(session.productPlan, "areas") ? input.area : current.area,
+      input.billCycle,
+      input.reminders,
       id,
     );
     db.exec("COMMIT");
@@ -262,9 +295,10 @@ export async function recordPayment(formData: FormData) {
   if (!methods.includes(method)) go(`/provider/subscriber/${id}`, { error: "Choose a payment method." });
   if (note.length > 200) go(`/provider/subscriber/${id}`, { error: "Keep the payment note short." });
 
-  const kind = amount >= current.price ? "full" : "partial";
+  const due = cycleAmount(current.price, current.bill_cycle);
+  const kind = amount >= due ? "full" : "partial";
   const today = todayISO();
-  const periodEnd = kind === "full" ? renewalAfterPayment(current.renew_date, today) : current.renew_date;
+  const periodEnd = kind === "full" ? renewalAfterPayment(current.renew_date, today, billCycleMonths(current.bill_cycle)) : current.renew_date;
   const periodStart = current.renew_date > today ? today : current.renew_date;
   const reference = makeRef();
 
@@ -305,6 +339,9 @@ export async function sendReminder(formData: FormData) {
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
   if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
+  if (!current.reminders) {
+    go(`/provider/subscriber/${id}`, { error: "Payment reminders are turned off for this line. Turn them on in the service record to send one." });
+  }
 
   const channel = readText(formData, "channel") || "portal";
   if (channel === "email" && !allows(session.productPlan, "emailReminders")) {
@@ -421,7 +458,7 @@ export async function payBill(formData: FormData) {
   if (detail.length > 80) go("/subscriber/pay", { error: "Keep the payer reference short." });
 
   const today = todayISO();
-  const periodEnd = renewalAfterPayment(current.renew_date, today);
+  const periodEnd = renewalAfterPayment(current.renew_date, today, billCycleMonths(current.bill_cycle));
   const reference = makeRef();
   const note = detail ? `Payer reference: ${detail}` : "Paid from the subscriber portal";
 
@@ -434,7 +471,7 @@ export async function payBill(formData: FormData) {
         (customer_id, amount, method, reference, paid_at, period_start, period_end, note, kind)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'full')`,
       current.id,
-      current.price,
+      cycleAmount(current.price, current.bill_cycle),
       method,
       reference,
       nowStamp(),
@@ -455,8 +492,8 @@ export async function payBill(formData: FormData) {
 }
 
 function getSubscriberByUser(userId: number) {
-  return one<{ id: number; price: number; renew_date: string }>(
-    `SELECT c.id, p.price, c.renew_date
+  return one<{ id: number; price: number; renew_date: string; bill_cycle: BillCycle }>(
+    `SELECT c.id, p.price, c.renew_date, c.bill_cycle
      FROM customers c JOIN plans p ON p.id = c.plan_id
      WHERE c.user_id = ?`,
     userId,
@@ -573,6 +610,8 @@ export async function importCustomers(formData: FormData) {
       const renewDate = normalizeDate(row.renewDate);
       const installationDate = row.installationDate ? normalizeDate(row.installationDate) : today;
       const planId = planByName.get(row.plan.toLowerCase());
+      const billCycle = billCycleFromImport(row.billCycle);
+      const reminders = remindersFromImport(row.reminders);
       let message = "";
       if (row.name.length < 2) message = "Name is missing.";
       else if (!/^\S+@\S+\.\S+$/.test(row.email)) message = "Email is not valid.";
@@ -580,6 +619,8 @@ export async function importCustomers(formData: FormData) {
       else if (row.address.length < 4 || row.city.length < 2) message = "Address and city are required.";
       else if (!planId) message = `No catalogue plan named "${row.plan}".`;
       else if (!renewDate || !installationDate) message = "Dates must be YYYY-MM-DD or DD/MM/YYYY.";
+      else if (billCycle === "invalid") message = "Bill cycle must be monthly, quarterly, bi-annually, or annually.";
+      else if (reminders === "invalid") message = "Reminders must be yes or no.";
       else if (seen.has(row.email) || one("SELECT id FROM users WHERE email = ?", row.email)) message = "That email is already used.";
       else if (slots <= 0) {
         message = `${usage.catalog.label} includes ${limitLabel(usage.customerCap)} subscribers, with overflow up to ${limitLabel(usage.overflowCap)}. Upgrade to import the rest.`;
@@ -598,8 +639,8 @@ export async function importCustomers(formData: FormData) {
       );
       run(
         `INSERT INTO customers
-          (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         Number(user.lastInsertRowid),
         row.mobile,
         row.address,
@@ -610,13 +651,15 @@ export async function importCustomers(formData: FormData) {
         installationDate as string,
         row.notes.slice(0, 500),
         allows(session.productPlan, "areas") ? row.area.slice(0, 80) : "",
+        billCycle,
+        reminders ? 1 : 0,
       );
       seen.add(row.email);
       imported += 1;
       slots -= 1;
     }
     const batch = run(
-      "INSERT INTO import_batches (provider_id, created_at, imported, skipped) VALUES (?, ?, ?, ?)",
+      "INSERT INTO import_batches (provider_id, created_at, imported, skipped, kind) VALUES (?, ?, ?, ?, 'customers')",
       session.providerId,
       nowStamp(),
       imported,
@@ -634,6 +677,71 @@ export async function importCustomers(formData: FormData) {
   refresh();
   go("/provider/import", {
     notice: `Imported ${imported}. Skipped ${issues.length}. Portal password for new logins is ${DEMO_CUSTOMER_PASSWORD}.`,
+    batch: String(batchId),
+  });
+}
+
+export async function importPlans(formData: FormData) {
+  const session = await requireRole("admin");
+  const parsed = parsePlanCsv(readText(formData, "csv"));
+  if (parsed.error) go("/provider/plans", { error: parsed.error });
+  if (parsed.rows.length === 0) go("/provider/plans", { error: "There are no plan rows in that file." });
+
+  const existing = many<{ name: string }>("SELECT name FROM plans WHERE provider_id = ?", session.providerId);
+  const names = new Set(existing.map((plan) => plan.name.toLowerCase()));
+  const issues: { line: number; message: string }[] = [];
+  let imported = 0;
+  const db = getDb();
+  let batchId = 0;
+
+  db.exec("BEGIN");
+  try {
+    for (const row of parsed.rows) {
+      const speed = wholeUnits(row.speed);
+      const price = wholeUnits(row.price);
+      const name = row.name.trim();
+      let message = "";
+      if (name.length < 2) message = "Name is missing.";
+      else if (names.has(name.toLowerCase())) message = "A plan with that name already exists.";
+      else if (!speed) message = "Speed must be a whole number of Mbps.";
+      else if (!price) message = "Price must be a whole number of rupees.";
+      else if (row.description.trim().length < 8) message = "Add a short description of who the plan is for.";
+      if (message) {
+        issues.push({ line: row.line, message });
+        continue;
+      }
+      run(
+        "INSERT INTO plans (provider_id, name, speed_mbps, price, data_cap, description) VALUES (?, ?, ?, ?, ?, ?)",
+        session.providerId,
+        name,
+        speed,
+        price,
+        row.data.trim() || "Unlimited",
+        row.description.trim(),
+      );
+      names.add(name.toLowerCase());
+      imported += 1;
+    }
+    const batch = run(
+      "INSERT INTO import_batches (provider_id, created_at, imported, skipped, kind) VALUES (?, ?, ?, ?, 'plans')",
+      session.providerId,
+      nowStamp(),
+      imported,
+      issues.length,
+    );
+    batchId = Number(batch.lastInsertRowid);
+    for (const issue of issues) {
+      run("INSERT INTO import_issues (batch_id, line, message) VALUES (?, ?, ?)", batchId, issue.line, issue.message);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  refresh();
+  go("/provider/plans", {
+    notice: `Added ${imported}. Skipped ${issues.length}.`,
     batch: String(batchId),
   });
 }
@@ -686,6 +794,81 @@ export async function reissueStaffPassword(formData: FormData) {
   );
   refresh();
   go("/provider/team", { notice: `A new password for ${person.name} is saved on this page.` });
+}
+
+export async function openUpgradeCheckout(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/upgrade", { error: "Only the desk owner can change the plan." });
+  const requested = readText(formData, "product_plan");
+  const usage = getUsage(session.providerId);
+  let nextPlan: ProductPlan;
+  let subscriberBase = usage.subscriberBase;
+  if (requested === "premium") {
+    const base = Number(readText(formData, "subscriber_base"));
+    const quote = quotePremium(base);
+    if (!quote.ok) go("/provider/upgrade", { error: quote.error });
+    nextPlan = quote.plan;
+    subscriberBase = base;
+  } else if (requested === "pro" || requested === "ultra") {
+    nextPlan = requested;
+  } else {
+    go("/provider/upgrade", { error: "Choose Pro, Ultra, or Premium." });
+  }
+  const nextCustomers = customerLimit(nextPlan);
+  const nextStaff = staffLimit(nextPlan);
+  if (usage.customers > nextCustomers) {
+    go("/provider/upgrade", {
+      error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
+    });
+  }
+  if (Number.isFinite(nextStaff) && usage.staff > nextStaff) {
+    go("/provider/upgrade", {
+      error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextStaff)} staff logins. This desk has ${usage.staff}.`,
+    });
+  }
+  if (nextPlan === usage.plan && subscriberBase === usage.subscriberBase) {
+    go("/provider/upgrade", { error: "This desk is already on that plan." });
+  }
+  const provider = usage.provider;
+  const platform = getPlatformProfile();
+  const amount = CATALOG[nextPlan].price;
+  const taxed = platform.gstin ? gstOnTop(amount) : { tax: 0, total: amount };
+  const mode = platform.gstin ? gstMode(platform.state, provider?.state ?? "") : "none";
+  const label = requested === "premium" ? "Premium" : CATALOG[nextPlan].label;
+  const inserted = run(
+    `INSERT INTO upgrade_orders (
+      provider_id, product_plan, subscriber_base, plan_label, plan_amount, tax, total, gst_mode, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    session.providerId,
+    nextPlan,
+    subscriberBase,
+    label,
+    amount,
+    taxed.tax,
+    taxed.total,
+    mode,
+    nowStamp(),
+  );
+  redirect(`/provider/upgrade/pay/${Number(inserted.lastInsertRowid)}`);
+}
+
+export async function payUpgrade(formData: FormData) {
+  const session = await requireRole("admin");
+  const id = Number(readText(formData, "order_id"));
+  const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", id);
+  if (!order || order.provider_id !== session.providerId) go("/provider/upgrade", { error: "That payment was not found." });
+  if (!session.isOwner) go(`/provider/upgrade/pay/${id}`, { error: "Only the desk owner can pay for a plan." });
+  if (order.status === "paid") redirect("/provider/upgrade?notice=Plan%20updated.");
+  const method = readText(formData, "method");
+  const detail = readText(formData, "detail");
+  if (!["UPI", "Card", "Net banking"].includes(method)) {
+    go(`/provider/upgrade/pay/${id}/checkout`, { error: "Choose how you want to pay." });
+  }
+  const result = collectUpgradePayment(order.id, { method, detail });
+  if (!result.ok) redirect(`/provider/upgrade/pay/${id}/checkout?notice=gateway`);
+  markUpgradePaid(order.id);
+  refresh();
+  redirect("/provider/upgrade?notice=Plan%20updated.");
 }
 
 export async function changeProductPlan(formData: FormData) {

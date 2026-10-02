@@ -1,8 +1,9 @@
-import { changeProductPlan, saveBrand } from "@/lib/actions";
+import { openUpgradeCheckout, saveBrand } from "@/lib/actions";
+import Link from "next/link";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { CATALOG, PLAN_ORDER, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily } from "@/lib/entitlements";
+import { CATALOG, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily, type ProductPlan } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
 import { INDIAN_STATES } from "@/lib/tax";
 import { getUsage } from "@/lib/queries";
@@ -25,7 +26,8 @@ export default async function BillingPage({
         <div>
           <h1>Desk plan</h1>
           <p>
-            {session.brandName} is on {usage.catalog.label}. {usage.customers} customers, {usage.staff} staff.
+            {session.brandName} is on {planFamily(usage.plan) === "premium" ? "Premium" : usage.catalog.label}.{" "}
+            {usage.customers} customers, {usage.staff} staff.
             {usage.subscriberBase > 0 ? ` Registered book: ${usage.subscriberBase}.` : ""}
             {usage.trial.active ? ` Trial runs until ${formatDate(usage.trial.ends)} (${usage.trial.daysLeft} days left).` : ""}
             {usage.trial.ended ? ` Trial ended on ${formatDate(usage.trial.ends)}.` : ""}
@@ -37,11 +39,11 @@ export default async function BillingPage({
       </header>
       <Banner error={query.error} notice={query.notice} />
       <p className="fine" style={{ marginBottom: 12 }}>
-        Choosing a plan switches this desk immediately. The monthly fee, the ₹3 overflow, and extra messages at ₹0.50
-        are prices on the plan. A card charge is not connected yet.
+        Upgrade opens a payment page for that plan. The monthly fee, the ₹3 overflow, and extra messages at ₹0.50 are
+        prices on the plan. The payment gateway is the only piece still to connect.
       </p>
       <section className="plan-pick">
-        {PLAN_ORDER.map((plan) => {
+        {(["pro", "ultra"] as ProductPlan[]).map((plan) => {
           const item = CATALOG[plan];
           const current = plan === usage.plan;
           const tooSmall = usage.customers > item.customers || usage.staff > item.staff;
@@ -50,9 +52,9 @@ export default async function BillingPage({
               <p className="fine">{current ? "Current plan" : "Switch to"}</p>
               <h2>{item.label}</h2>
               <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-                {item.price === 0 ? "₹0" : formatInr(item.price)}
+                {formatInr(item.price)}
               </p>
-              <p className="fine">{item.price === 0 ? "to start" : "per month"}</p>
+              <p className="fine">per month</p>
               <p style={{ margin: "10px 0" }}>{item.blurb}</p>
               <p className="fine">
                 {limitLabel(item.customers)} customers · {limitLabel(item.reminders)} reminders · {limitLabel(item.staff)}{" "}
@@ -67,10 +69,10 @@ export default async function BillingPage({
               {current || !session.isOwner ? null : tooSmall ? (
                 <p className="fine">This desk is larger than {item.label}.</p>
               ) : (
-                <form action={changeProductPlan}>
+                <form action={openUpgradeCheckout}>
                   <input type="hidden" name="product_plan" value={plan} />
-                  <SubmitButton className="btn small" pendingLabel="Switching…">
-                    Use {item.label}
+                  <SubmitButton className="btn small" pendingLabel="Opening payment…">
+                    Upgrade
                   </SubmitButton>
                 </form>
               )}
@@ -78,6 +80,32 @@ export default async function BillingPage({
             </article>
           );
         })}
+        <article className={planFamily(usage.plan) === "premium" ? "card current" : "card"}>
+          <p className="fine">{planFamily(usage.plan) === "premium" ? "Current plan" : "Upgrade to"}</p>
+          <h2>Premium</h2>
+          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
+            from {formatInr(CATALOG.premium_3000.price)}
+          </p>
+          <p className="fine">per month, set from the subscriber base</p>
+          <p style={{ margin: "10px 0" }}>Unlimited staff. The rate is worked out when you upgrade.</p>
+          <p className="fine">
+            Up to {limitLabel(CATALOG.premium_30000.customers)} customers · unlimited staff ·{" "}
+            {CATALOG.premium_3000.trialDays}-day trial
+          </p>
+          <p className="fine">Overflow at ₹3 each. Extra messages ₹0.50.</p>
+          <ul className="fine" style={{ paddingLeft: 18 }}>
+            {PLAN_POINTS.filter((feature) => feature.plans.includes("premium")).map((feature) => (
+              <li key={feature.label}>{feature.label}</li>
+            ))}
+          </ul>
+          {session.isOwner ? (
+            <Link className="btn small" href="/provider/upgrade/premium">
+              Upgrade
+            </Link>
+          ) : (
+            <p className="fine">Only the owner can switch plans.</p>
+          )}
+        </article>
       </section>
       <article className="card" style={{ marginTop: 14, maxWidth: 640 }}>
         <h2>ISP details</h2>

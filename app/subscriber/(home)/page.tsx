@@ -4,6 +4,7 @@ import { changePassword } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner, StatusPill } from "@/components/ui";
+import { billCycleLabel, billCycleMonths, cycleAmount } from "@/lib/bill-cycle";
 import {
   connectionId,
   dueLabel,
@@ -12,24 +13,27 @@ import {
   formatSpeed,
   formatStamp,
   renewalAfterPayment,
+  todayISO,
 } from "@/lib/format";
 import { allows } from "@/lib/entitlements";
 import { getSubscriberByUserId, listPayments, listReminders } from "@/lib/queries";
 
 export const metadata = { title: "My connection" };
 
-function billingReminder(status: string, renewDate: string, plan: string, price: number) {
+function billingReminder(status: string, renewDate: string, plan: string, price: number, cycle: string) {
+  const due = formatInr(cycleAmount(price, cycle));
+  const nextRenewal = formatDate(renewalAfterPayment(renewDate, todayISO(), billCycleMonths(cycle)));
   if (status === "suspended" || status === "disconnected") {
     const word = status === "disconnected" ? "disconnected" : "paused";
     return {
       title: status === "disconnected" ? "Service is disconnected" : "Service is paused",
-      body: `This line is ${word}. Pay ${formatInr(price)} to turn ${plan} back on. Renewal will move to ${formatDate(renewalAfterPayment(renewDate))}.`,
+      body: `This line is ${word}. Pay ${due} to turn ${plan} back on. Renewal will move to ${nextRenewal}.`,
     };
   }
   if (status === "collection") {
     return {
       title: "Account is in collection",
-      body: `${plan} is in collection. The amount due is ${formatInr(price)}.`,
+      body: `${plan} is in collection. The amount due is ${due}.`,
     };
   }
   if (status === "write_off") {
@@ -42,7 +46,7 @@ function billingReminder(status: string, renewDate: string, plan: string, price:
   if (label.includes("overdue")) {
     return {
       title: "Renewal overdue",
-      body: `${plan} was due on ${formatDate(renewDate)}. Pay ${formatInr(price)} to carry the connection forward.`,
+      body: `${plan} was due on ${formatDate(renewDate)}. Pay ${due} to carry the connection forward.`,
     };
   }
   if (label === "Due today" || label === "Due tomorrow" || label.startsWith("Due in")) {
@@ -51,7 +55,7 @@ function billingReminder(status: string, renewDate: string, plan: string, price:
     if (soon) {
       return {
         title: days === "Due today" ? "Renewal is today" : days === "Due tomorrow" ? "Renewal is tomorrow" : "Renewal coming up",
-        body: `${plan} renews on ${formatDate(renewDate)} (${label.toLowerCase()}). Amount due is ${formatInr(price)}.`,
+        body: `${plan} renews on ${formatDate(renewDate)} (${label.toLowerCase()}). Amount due is ${due}.`,
       };
     }
   }
@@ -72,7 +76,7 @@ export default async function PortalHome({
   if (!person) notFound();
   const payments = listPayments({ customerId: person.id }).slice(0, 3);
   const reminders = listReminders(person.id);
-  const live = billingReminder(person.status, person.renew_date, person.plan_name, person.price);
+  const live = billingReminder(person.status, person.renew_date, person.plan_name, person.price, person.bill_cycle);
 
   return (
     <>
@@ -95,8 +99,10 @@ export default async function PortalHome({
           </div>
         </div>
         <div>
-          <p className="hero-price">{formatInr(person.price)}</p>
-          <p>renews {formatDate(person.renew_date)}</p>
+          <p className="hero-price">{formatInr(cycleAmount(person.price, person.bill_cycle))}</p>
+          <p>
+            {billCycleLabel(person.bill_cycle).toLowerCase()} · renews {formatDate(person.renew_date)}
+          </p>
           <div style={{ marginTop: 14 }}>
             <Link className="btn light" href="/subscriber/pay">
               Pay renewal
@@ -111,7 +117,7 @@ export default async function PortalHome({
             <strong>{live.title}</strong>
             <p>{live.body}</p>
           </div>
-          {allows(session.productPlan, "renewalReminders") ? (
+          {allows(session.productPlan, "renewalReminders") && person.reminders ? (
             <p className="fine">
               On a paid desk, a reminder is posted here 3 days before renewal, 1 day before, and on the due date. The due-date note says the line will be disconnected if unpaid. These stay on this page until a mail or SMS account is connected.
             </p>

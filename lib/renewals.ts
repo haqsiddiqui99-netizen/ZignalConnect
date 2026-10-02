@@ -9,6 +9,7 @@ type DueLine = {
   status: string;
   plan_name: string;
   price: number;
+  reminders: number;
 };
 
 const STAGES = {
@@ -34,7 +35,7 @@ export function issueRenewalReminders(providerId: number) {
   if (!provider || !allows(provider.product_plan, "renewalReminders")) return 0;
 
   const lines = many<DueLine>(
-    `SELECT c.id, c.renew_date, c.status, p.name AS plan_name, p.price
+    `SELECT c.id, c.renew_date, c.status, c.reminders, p.name AS plan_name, p.price
      FROM customers c
      JOIN users u ON u.id = c.user_id
      JOIN plans p ON p.id = c.plan_id
@@ -43,6 +44,7 @@ export function issueRenewalReminders(providerId: number) {
   );
   let created = 0;
   for (const line of lines) {
+    if (!line.reminders) continue;
     if (line.status === "suspended" || line.status === "disconnected" || line.status === "write_off") continue;
     const days = daysUntil(line.renew_date);
     const stage = days === 3 ? "d3" : days === 1 ? "d1" : days === 0 ? "due" : null;

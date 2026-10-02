@@ -40,7 +40,9 @@ export default async function ImportPage({
           <h2>Upload</h2>
           <p className="fine" style={{ marginBottom: 12 }}>
             Use the template columns. Plan names must already exist. Dates can be YYYY-MM-DD or DD/MM/YYYY. Status can be
-            active, paused, disconnect, collection, or write off. New portal passwords are welcome123.
+            active, paused, disconnect, collection, or write off. Bill cycle can be monthly, quarterly, bi-annually, or
+            annually. Reminders can be yes or no. Blank columns stay monthly with reminders on. New portal passwords are
+            welcome123.
           </p>
           {plans.length === 0 ? (
             <p>
