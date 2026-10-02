@@ -5,7 +5,7 @@ import { DEMO_ADMIN, DEMO_CUSTOMER_PASSWORD, DEMO_OPERATOR } from "@/lib/demo";
 import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword } from "@/lib/password";
 
-const SCHEMA = 6;
+const SCHEMA = 7;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
 
 function openDatabase() {
@@ -47,6 +47,7 @@ export function getDb() {
       providers INTEGER NOT NULL
     );
   `);
+  ensureReceiptSchema(globalForDb.lumenDb);
   globalForDb.lumenDb.exec(`
     CREATE TABLE IF NOT EXISTS support_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -296,6 +297,67 @@ function migrate(db: DatabaseSync) {
     db.exec("ALTER TABLE providers_next RENAME TO providers");
     db.exec("PRAGMA foreign_keys = ON");
   }
+
+  ensureReceiptSchema(db);
+}
+
+function ensureReceiptSchema(db: DatabaseSync) {
+  const billColumns = columnNames(db, "providers");
+  if (!billColumns.has("gstin")) db.exec("ALTER TABLE providers ADD COLUMN gstin TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("address")) db.exec("ALTER TABLE providers ADD COLUMN address TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("city")) db.exec("ALTER TABLE providers ADD COLUMN city TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("state")) db.exec("ALTER TABLE providers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
+
+  const paymentColumns = columnNames(db, "payments");
+  if (!paymentColumns.has("receipt_snapshot")) {
+    db.exec("ALTER TABLE payments ADD COLUMN receipt_snapshot TEXT NOT NULL DEFAULT ''");
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      legal_name TEXT NOT NULL,
+      gstin TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS desk_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      period TEXT NOT NULL,
+      plan_label TEXT NOT NULL,
+      plan_amount INTEGER NOT NULL,
+      overage_amount INTEGER NOT NULL,
+      taxable INTEGER NOT NULL,
+      tax INTEGER NOT NULL,
+      total INTEGER NOT NULL,
+      gst_mode TEXT NOT NULL CHECK(gst_mode IN ('none', 'cgst', 'igst')),
+      seller_name TEXT NOT NULL,
+      seller_gstin TEXT NOT NULL DEFAULT '',
+      seller_address TEXT NOT NULL DEFAULT '',
+      seller_city TEXT NOT NULL DEFAULT '',
+      seller_state TEXT NOT NULL DEFAULT '',
+      seller_phone TEXT NOT NULL DEFAULT '',
+      seller_email TEXT NOT NULL DEFAULT '',
+      buyer_name TEXT NOT NULL,
+      buyer_gstin TEXT NOT NULL DEFAULT '',
+      buyer_address TEXT NOT NULL DEFAULT '',
+      buyer_city TEXT NOT NULL DEFAULT '',
+      buyer_state TEXT NOT NULL DEFAULT '',
+      buyer_phone TEXT NOT NULL DEFAULT '',
+      method TEXT NOT NULL DEFAULT '',
+      reference TEXT NOT NULL DEFAULT '',
+      paid_at TEXT NOT NULL DEFAULT '',
+      issued_at TEXT NOT NULL,
+      UNIQUE(provider_id, period)
+    );
+  `);
+  db.prepare(
+    `INSERT OR IGNORE INTO platform_profile (id, legal_name, email) VALUES (1, 'Zignal Connect', ?)`,
+  ).run(DEMO_OPERATOR.email);
 }
 
 function ensurePlatformAdmin(db: DatabaseSync) {

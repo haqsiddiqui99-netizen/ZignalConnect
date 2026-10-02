@@ -340,6 +340,14 @@ html[data-theme="dark"] .plan-pick article.current,
 html[data-theme="dark"] .plan-option:has(input:checked),
 html[data-theme="dark"] .plan-option:has(input:focus-visible) { outline-color: #d9c7a4; }
 
+.receipt-screen { max-width: 920px; margin: 0 auto; padding: 28px 20px 64px; }
+.receipt-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.receipt-actions div { display: flex; gap: 8px; }
+@media print {
+  .no-print { display: none !important; }
+  .receipt-screen { padding: 0; max-width: none; }
+}
+
 @media (max-width: 980px) {
   .login, .app-shell, .split, .stats, .stats.pair, .stats.trio, .plan-grid { grid-template-columns: 1fr; }
   .login-brand h1 { font-size: 46px; }

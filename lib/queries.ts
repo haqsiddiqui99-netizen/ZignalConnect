@@ -88,6 +88,10 @@ export type ProviderRecord = {
   created_at: string;
   subscriber_base: number;
   trial_ends: string;
+  gstin: string;
+  address: string;
+  city: string;
+  state: string;
 };
 
 const subscriberSelect = `
@@ -560,6 +564,32 @@ export function zignalRevenue() {
     providers: desk.providers.length,
     series,
   };
+}
+
+export type PlatformProfile = {
+  legal_name: string;
+  gstin: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
+  email: string;
+};
+
+export function getPlatformProfile(): PlatformProfile {
+  return (
+    one<PlatformProfile>(
+      "SELECT legal_name, gstin, address, city, state, phone, email FROM platform_profile WHERE id = 1",
+    ) ?? {
+      legal_name: "Zignal Connect",
+      gstin: "",
+      address: "",
+      city: "",
+      state: "",
+      phone: "",
+      email: "",
+    }
+  );
 }
 
 export function deskMobile(userId: number) {

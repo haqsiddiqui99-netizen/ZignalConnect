@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/auth";
+import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
 import { addDays, addMonths, formatInr, formatStamp, isDate, todayISO } from "@/lib/format";
 import { listProviderPayments, paymentYears, zignalRevenue } from "@/lib/queries";
+import { ensureDeskCharges, listDeskCharges } from "@/lib/receipts";
 
 export const metadata = { title: "Revenue" };
 
@@ -47,6 +49,8 @@ export default async function OperatorRevenue({
   const payments = listProviderPayments({ ...range, sort, dir });
   const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
   const years = paymentYears();
+  ensureDeskCharges();
+  const deskFees = listDeskCharges();
 
   function keep(extra: Record<string, string>) {
     const params = new URLSearchParams();
@@ -91,9 +95,16 @@ export default async function OperatorRevenue({
         <RevenueChart points={revenue.series} />
       </article>
       <article className="card" style={{ marginTop: 14 }}>
-        <h2>Payments</h2>
+        <h2>Receipts from providers</h2>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
-          {payments.length} receipts · {formatInr(total)}
+          What each ISP pays Zignal for the desk. Add the GSTIN under Settings so tax is shown on new receipts.
+        </p>
+        <DeskFeeTable charges={deskFees} canRecord empty="No desk fee has been issued yet." />
+      </article>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Subscriber payments</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          {payments.length} payments · {formatInr(total)}
           {range.from ? ` from ${range.from} to ${addDays(range.to ?? todayISO(), -1)}.` : " on every provider desk."}
         </p>
         <form className="filters" action="/operator/revenue">

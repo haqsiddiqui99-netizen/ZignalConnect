@@ -47,6 +47,9 @@ export default async function HistoryPage() {
                     <td>
                       {payment.reference}
                       {payment.note ? <div className="fine">{payment.note}</div> : null}
+                      <div>
+                        <Link href={`/receipts/income/${payment.id}`}>Receipt</Link>
+                      </div>
                     </td>
                     <td>{payment.method}</td>
                     <td>{formatDate(payment.period_end)}</td>

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { authenticate, clearSession, requireOperator, requireRole, setSession } from "@/lib/auth";
+import { authenticate, clearSession, getSession, requireOperator, requireRole, setSession } from "@/lib/auth";
 import { normalizeDate, parseCustomerCsv } from "@/lib/csv";
 import crypto from "crypto";
 import { getDb, many, one, run } from "@/lib/db";
@@ -29,6 +29,7 @@ import {
   todayISO,
 } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { cleanGstin, isGstin, isIndianState } from "@/lib/tax";
 import { getSubscriber, getUsage } from "@/lib/queries";
 
 function go(path: string, params?: Record<string, string>): never {
@@ -267,9 +268,10 @@ export async function recordPayment(formData: FormData) {
   const reference = makeRef();
 
   const db = getDb();
+  let paymentId = 0;
   db.exec("BEGIN");
   try {
-    run(
+    const inserted = run(
       `INSERT INTO payments
         (customer_id, amount, method, reference, paid_at, period_start, period_end, note, kind)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -283,6 +285,7 @@ export async function recordPayment(formData: FormData) {
       note || `Recorded by ${session.name}`,
       kind,
     );
+    paymentId = Number(inserted.lastInsertRowid);
     if (kind === "full") {
       run("UPDATE customers SET renew_date = ?, status = 'active' WHERE id = ?", periodEnd, id);
     }
@@ -297,7 +300,7 @@ export async function recordPayment(formData: FormData) {
     kind === "full"
       ? `Payment ${reference} recorded. Renewal moved to ${formatDate(periodEnd)}.`
       : `Partial payment ${reference} recorded. Renewal stays on ${formatDate(current.renew_date)} until a full plan payment is received.`;
-  go(`/admin/customers/${id}`, { notice });
+  go(`/receipts/income/${paymentId}`, { notice });
 }
 
 export async function sendReminder(formData: FormData) {
@@ -426,9 +429,10 @@ export async function payBill(formData: FormData) {
   const note = detail ? `Payer reference: ${detail}` : "Paid from the subscriber portal";
 
   const db = getDb();
+  let paymentId = 0;
   db.exec("BEGIN");
   try {
-    run(
+    const inserted = run(
       `INSERT INTO payments
         (customer_id, amount, method, reference, paid_at, period_start, period_end, note, kind)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'full')`,
@@ -441,6 +445,7 @@ export async function payBill(formData: FormData) {
       periodEnd,
       note,
     );
+    paymentId = Number(inserted.lastInsertRowid);
     run("UPDATE customers SET renew_date = ?, status = 'active' WHERE id = ?", periodEnd, current.id);
     db.exec("COMMIT");
   } catch (error) {
@@ -449,7 +454,7 @@ export async function payBill(formData: FormData) {
   }
 
   refresh();
-  go("/portal", {
+  go(`/receipts/income/${paymentId}`, {
     notice: `Payment ${reference} recorded for ${formatInr(current.price)}. Your renewal is now ${formatDate(periodEnd)}. No bank was charged — this desk keeps its own ledger.`,
   });
 }
@@ -777,18 +782,86 @@ export async function saveBrand(formData: FormData) {
   const name = readText(formData, "isp_name");
   const phone = readText(formData, "support_phone").replace(/\s+/g, "");
   const logo = readText(formData, "logo_letter").slice(0, 2).toUpperCase();
+  const gstin = cleanGstin(readText(formData, "gstin"));
+  const address = readText(formData, "address");
+  const city = readText(formData, "city");
+  const state = readText(formData, "state");
   if (name.length < 2) go("/admin/billing", { error: "Enter your ISP name." });
   if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/admin/billing", { error: "Enter a 10-digit support number, or leave it blank." });
+  if (!isGstin(gstin)) go("/admin/billing", { error: "Enter a 15-character GSTIN, or leave it blank." });
+  if (!isIndianState(state)) go("/admin/billing", { error: "Choose a state." });
+  if (address.length > 160) go("/admin/billing", { error: "Keep the address shorter." });
   const currentLogo = one<{ logo_letter: string }>("SELECT logo_letter FROM providers WHERE id = ?", session.providerId);
   run(
-    "UPDATE providers SET name = ?, support_phone = ?, logo_letter = ? WHERE id = ?",
+    "UPDATE providers SET name = ?, support_phone = ?, logo_letter = ?, gstin = ?, address = ?, city = ?, state = ? WHERE id = ?",
     name,
     phone,
     allows(session.productPlan, "logo") ? logo : (currentLogo?.logo_letter ?? ""),
+    gstin,
+    address,
+    city,
+    state,
     session.providerId,
   );
   refresh();
-  go("/admin/billing", { notice: "ISP details saved." });
+  go("/admin/billing", { notice: "ISP details saved. New subscriber receipts use this GSTIN and address." });
+}
+
+export async function savePlatformProfile(formData: FormData) {
+  await requireOperator();
+  const name = readText(formData, "legal_name");
+  const gstin = cleanGstin(readText(formData, "gstin"));
+  const address = readText(formData, "address");
+  const city = readText(formData, "city");
+  const state = readText(formData, "state");
+  const phone = readText(formData, "phone").replace(/\s+/g, "");
+  const email = readText(formData, "email");
+  if (name.length < 2) go("/operator/settings", { error: "Enter the legal name for receipts." });
+  if (!isGstin(gstin)) go("/operator/settings", { error: "Enter a 15-character GSTIN, or leave it blank." });
+  if (!isIndianState(state)) go("/operator/settings", { error: "Choose a state." });
+  if (address.length > 160) go("/operator/settings", { error: "Keep the address shorter." });
+  if (phone && !/^[0-9]{8,15}$/.test(phone)) go("/operator/settings", { error: "Enter a phone number, or leave it blank." });
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) go("/operator/settings", { error: "Enter a valid email, or leave it blank." });
+  run(
+    `UPDATE platform_profile
+     SET legal_name = ?, gstin = ?, address = ?, city = ?, state = ?, phone = ?, email = ?
+     WHERE id = 1`,
+    name,
+    gstin,
+    address,
+    city,
+    state,
+    phone,
+    email,
+  );
+  refresh();
+  go("/operator/settings", { notice: "Receipt details saved. Desk fees issued from now on use them." });
+}
+
+export async function recordDeskPayment(formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/");
+  const back = session.kind === "operator" ? "/operator/revenue" : "/admin/payments";
+  const id = Number(formData.get("desk_payment_id"));
+  const method = readText(formData, "method");
+  const reference = readText(formData, "reference") || makeRef();
+  const methods = ["UPI", "Bank transfer", "Cash", "Other"];
+  const row = one<{ id: number; provider_id: number; paid_at: string }>(
+    "SELECT id, provider_id, paid_at FROM desk_payments WHERE id = ?",
+    id,
+  );
+  if (!row) go(back, { error: "That desk fee was not found." });
+  if (session.kind === "operator") {
+    /* Zignal records the fee a provider paid */
+  } else if (!session.isOwner || session.role !== "admin" || session.providerId !== row.provider_id) {
+    go(back, { error: "Only the desk owner can record a payment to Zignal." });
+  }
+  if (!methods.includes(method)) go(back, { error: "Choose how this desk fee was paid." });
+  if (reference.length > 80) go(back, { error: "Keep the reference short." });
+  if (row.paid_at) go(`/receipts/desk/${id}`, { notice: "This desk fee is already recorded." });
+  run("UPDATE desk_payments SET method = ?, reference = ?, paid_at = ? WHERE id = ?", method, reference, nowStamp(), id);
+  refresh();
+  go(`/receipts/desk/${id}`, { notice: "Payment recorded. Download the receipt below." });
 }
 
 const SUPPORT_STATUSES = ["open", "in_progress", "resolved"] as const;

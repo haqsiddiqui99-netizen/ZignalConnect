@@ -155,6 +155,7 @@ export default async function CustomerDetailPage({
                       <td>
                         {formatStamp(payment.paid_at)}
                         <div className="fine">{payment.reference}</div>
+                        <Link href={`/receipts/income/${payment.id}`}>Receipt</Link>
                       </td>
                       <td>
                         {payment.method}

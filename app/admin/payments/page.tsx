@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
+import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
 import { addDays, addMonths, formatInr, formatStamp, isDate, monthBounds, todayISO } from "@/lib/format";
-import { listPayments, paymentYears, providerRevenue } from "@/lib/queries";
+import { getUsage, listPayments, paymentYears, providerRevenue } from "@/lib/queries";
+import { ensureDeskCharges, listDeskCharges } from "@/lib/receipts";
 
 export const metadata = { title: "Revenue" };
 
@@ -51,6 +53,9 @@ export default async function PaymentsPage({
   const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
   const revenue = session.isOwner ? providerRevenue(session.providerId, range) : null;
   const years = paymentYears(session.providerId);
+  const usage = getUsage(session.providerId);
+  ensureDeskCharges(session.providerId);
+  const deskFees = listDeskCharges(session.providerId);
 
   function keep(extra: Record<string, string>) {
     const params = new URLSearchParams();
@@ -144,6 +149,10 @@ export default async function PaymentsPage({
         </p>
       )}
       <article className="card">
+        <h2>Subscriber receipts</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          What subscribers paid this desk. Each row can be downloaded.
+        </p>
         {payments.length === 0 ? (
           <p>No payments in this range.</p>
         ) : (
@@ -163,6 +172,7 @@ export default async function PaymentsPage({
                       </th>
                     );
                   })}
+                  <th>Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -178,12 +188,31 @@ export default async function PaymentsPage({
                     <td>{payment.reference}</td>
                     <td className="num">{formatInr(payment.amount)}</td>
                     <td>{payment.kind === "partial" ? "Partial" : "Full cycle"}</td>
+                    <td>
+                      <Link href={`/receipts/income/${payment.id}`}>Receipt</Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+      </article>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Paid to Zignal</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          The monthly desk fee for this ISP. GST is added when Zignal has a GSTIN. Recording a payment does not charge a
+          card.
+        </p>
+        <DeskFeeTable
+          charges={deskFees}
+          canRecord={session.isOwner}
+          empty={
+            usage.trial.active
+              ? "This month is still in the trial, so there is no desk-fee receipt yet."
+              : "No desk fee has been issued yet."
+          }
+        />
       </article>
     </>
   );

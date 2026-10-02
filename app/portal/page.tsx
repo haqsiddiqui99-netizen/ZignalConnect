@@ -149,6 +149,7 @@ export default async function PortalHome({
                     <td>
                       {formatStamp(payment.paid_at)}
                       <div className="fine">{payment.reference}</div>
+                      <Link href={`/receipts/income/${payment.id}`}>Receipt</Link>
                     </td>
                     <td>{payment.method}</td>
                     <td className="num">{formatInr(payment.amount)}</td>

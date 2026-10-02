@@ -148,7 +148,12 @@ export default async function AdminHome() {
                         <div className="fine">{payment.method}</div>
                       </td>
                       <td className="num">{formatInr(payment.amount)}</td>
-                      <td>{formatDate(payment.paid_at)}</td>
+                      <td>
+                        {formatDate(payment.paid_at)}
+                        <div className="fine">
+                          <Link href={`/receipts/income/${payment.id}`}>Receipt</Link>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

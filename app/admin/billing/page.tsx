@@ -4,6 +4,7 @@ import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { CATALOG, PLAN_ORDER, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
+import { INDIAN_STATES } from "@/lib/tax";
 import { getUsage } from "@/lib/queries";
 
 export const metadata = { title: "Upgrade" };
@@ -81,9 +82,7 @@ export default async function BillingPage({
       <article className="card" style={{ marginTop: 14, maxWidth: 640 }}>
         <h2>ISP details</h2>
         <p className="fine" style={{ marginBottom: 12 }}>
-          {allows(session.productPlan, "customBrand")
-            ? "Subscribers see this name on their portal."
-            : "Subscribers see this name on their portal."}
+          Subscribers see this name on their portal. The GSTIN, address, and logo go on the receipts they download.
         </p>
         {session.isOwner ? (
           <form action={saveBrand} className="stack">
@@ -95,6 +94,29 @@ export default async function BillingPage({
               <span>Support mobile</span>
               <input name="support_phone" defaultValue={provider?.support_phone ?? ""} />
             </label>
+            <label className="field">
+              <span>GSTIN</span>
+              <input name="gstin" defaultValue={provider?.gstin ?? ""} placeholder="22AAAAA0000A1Z5" maxLength={15} />
+            </label>
+            <label className="field">
+              <span>Address</span>
+              <input name="address" defaultValue={provider?.address ?? ""} />
+            </label>
+            <div className="row-2">
+              <label className="field">
+                <span>City</span>
+                <input name="city" defaultValue={provider?.city ?? ""} />
+              </label>
+              <label className="field">
+                <span>State</span>
+                <select name="state" defaultValue={provider?.state ?? ""}>
+                  <option value="">Not set</option>
+                  {INDIAN_STATES.map((state) => (
+                    <option key={state}>{state}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {allows(session.productPlan, "logo") ? (
               <label className="field">
                 <span>Logo letters</span>
