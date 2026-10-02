@@ -43,25 +43,25 @@ function readText(formData: FormData, key: string) {
 }
 
 function refresh() {
-  revalidatePath("/admin");
-  revalidatePath("/admin/customers");
-  revalidatePath("/admin/plans");
-  revalidatePath("/admin/payments");
-  revalidatePath("/admin/import");
-  revalidatePath("/admin/billing");
-  revalidatePath("/admin/team");
-  revalidatePath("/admin/reports");
-  revalidatePath("/admin/complaints");
-  revalidatePath("/admin/support");
-  revalidatePath("/admin/settings");
-  revalidatePath("/operator");
-  revalidatePath("/operator/support");
-  revalidatePath("/operator/revenue");
-  revalidatePath("/operator/settings");
-  revalidatePath("/portal");
-  revalidatePath("/portal/pay");
-  revalidatePath("/portal/history");
-  revalidatePath("/portal/complaints");
+  revalidatePath("/provider");
+  revalidatePath("/provider/subscriber");
+  revalidatePath("/provider/plans");
+  revalidatePath("/provider/revenue");
+  revalidatePath("/provider/import");
+  revalidatePath("/provider/upgrade");
+  revalidatePath("/provider/team");
+  revalidatePath("/provider/reports");
+  revalidatePath("/provider/complaints");
+  revalidatePath("/provider/support");
+  revalidatePath("/provider/settings");
+  revalidatePath("/zignal");
+  revalidatePath("/zignal/support");
+  revalidatePath("/zignal/revenue");
+  revalidatePath("/zignal/settings");
+  revalidatePath("/subscriber");
+  revalidatePath("/subscriber/pay");
+  revalidatePath("/subscriber/receipts");
+  revalidatePath("/subscriber/complaints");
 }
 
 export async function login(formData: FormData) {
@@ -70,8 +70,8 @@ export async function login(formData: FormData) {
   const user = authenticate(email, password);
   if (!user) go("/", { error: "Those credentials do not match an account." });
   await setSession(user.id, user.kind);
-  if (user.kind === "operator") redirect("/operator");
-  redirect(user.role === "admin" ? "/admin" : "/portal");
+  if (user.kind === "operator") redirect("/zignal");
+  redirect(user.role === "admin" ? "/provider" : "/subscriber");
 }
 
 export async function logout() {
@@ -144,15 +144,15 @@ export async function createSubscriber(formData: FormData) {
   const session = await requireRole("admin");
   const usage = getUsage(session.providerId);
   const paused = trialBlock(usage);
-  if (paused) go("/admin/customers/new", { error: paused });
+  if (paused) go("/provider/subscriber/new", { error: paused });
   const full = capBlock(usage);
-  if (full) go("/admin/customers/new", { error: full });
+  if (full) go("/provider/subscriber/new", { error: full });
   const parsed = readSubscriberInput(formData, session.providerId, session.productPlan);
-  if (!parsed.ok) go("/admin/customers/new", { error: parsed.error });
+  if (!parsed.ok) go("/provider/subscriber/new", { error: parsed.error });
   const input = parsed.value;
 
   if (one("SELECT id FROM users WHERE email = ?", input.email)) {
-    go("/admin/customers/new", { error: "That email is already used for a login." });
+    go("/provider/subscriber/new", { error: "That email is already used for a login." });
   }
 
   const db = getDb();
@@ -190,7 +190,7 @@ export async function createSubscriber(formData: FormData) {
   }
 
   refresh();
-  go(`/admin/customers/${customerId}`, {
+  go(`/provider/subscriber/${customerId}`, {
     notice: `Subscriber added. Portal password is ${DEMO_CUSTOMER_PASSWORD}.`,
   });
 }
@@ -199,13 +199,13 @@ export async function updateSubscriber(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
-  if (!current) go("/admin/customers", { error: "That subscriber was not found." });
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
   const parsed = readSubscriberInput(formData, session.providerId, session.productPlan);
-  if (!parsed.ok) go(`/admin/customers/${id}`, { error: parsed.error });
+  if (!parsed.ok) go(`/provider/subscriber/${id}`, { error: parsed.error });
   const input = parsed.value;
 
   const clash = one<{ id: number }>("SELECT id FROM users WHERE email = ? AND id != ?", input.email, current.user_id);
-  if (clash) go(`/admin/customers/${id}`, { error: "That email is already used for a login." });
+  if (clash) go(`/provider/subscriber/${id}`, { error: "That email is already used for a login." });
 
   const db = getDb();
   db.exec("BEGIN");
@@ -233,34 +233,34 @@ export async function updateSubscriber(formData: FormData) {
   }
 
   refresh();
-  go(`/admin/customers/${id}`, { notice: "Subscriber details saved." });
+  go(`/provider/subscriber/${id}`, { notice: "Subscriber details saved." });
 }
 
 export async function resetPortalPassword(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
-  if (!current) go("/admin/customers", { error: "That subscriber was not found." });
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
   run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(DEMO_CUSTOMER_PASSWORD), current.user_id);
   refresh();
-  go(`/admin/customers/${id}`, { notice: `Portal password reset to ${DEMO_CUSTOMER_PASSWORD}.` });
+  go(`/provider/subscriber/${id}`, { notice: `Portal password reset to ${DEMO_CUSTOMER_PASSWORD}.` });
 }
 
 export async function recordPayment(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
-  if (!current) go("/admin/customers", { error: "That subscriber was not found." });
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
 
   const amount = Number(formData.get("amount"));
   const method = readText(formData, "method");
   const note = readText(formData, "note");
   const methods = ["UPI", "Card", "Net banking", "Cash"];
   if (!Number.isInteger(amount) || amount <= 0) {
-    go(`/admin/customers/${id}`, { error: "Enter a payment amount in whole rupees." });
+    go(`/provider/subscriber/${id}`, { error: "Enter a payment amount in whole rupees." });
   }
-  if (!methods.includes(method)) go(`/admin/customers/${id}`, { error: "Choose a payment method." });
-  if (note.length > 200) go(`/admin/customers/${id}`, { error: "Keep the payment note short." });
+  if (!methods.includes(method)) go(`/provider/subscriber/${id}`, { error: "Choose a payment method." });
+  if (note.length > 200) go(`/provider/subscriber/${id}`, { error: "Keep the payment note short." });
 
   const kind = amount >= current.price ? "full" : "partial";
   const today = todayISO();
@@ -297,28 +297,24 @@ export async function recordPayment(formData: FormData) {
   }
 
   refresh();
-  const notice =
-    kind === "full"
-      ? `Payment ${reference} recorded. Renewal moved to ${formatDate(periodEnd)}.`
-      : `Partial payment ${reference} recorded. Renewal stays on ${formatDate(current.renew_date)} until a full plan payment is received.`;
-  go(`/receipts/income/${paymentId}`, { notice });
+  go(`/provider/receipt/income/${paymentId}`);
 }
 
 export async function sendReminder(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
-  if (!current) go("/admin/customers", { error: "That subscriber was not found." });
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
 
   const channel = readText(formData, "channel") || "portal";
   if (channel === "email" && !allows(session.productPlan, "emailReminders")) {
-    go(`/admin/customers/${id}`, { error: "Email reminders are part of Pro, Ultra, and Premium." });
+    go(`/provider/subscriber/${id}`, { error: "Email reminders are part of Pro, Ultra, and Premium." });
   }
   if ((channel === "sms" || channel === "whatsapp") && !allows(session.productPlan, "sms")) {
-    go(`/admin/customers/${id}`, { error: "SMS and WhatsApp reminders are part of Ultra and Premium." });
+    go(`/provider/subscriber/${id}`, { error: "SMS and WhatsApp reminders are part of Ultra and Premium." });
   }
   if (!["portal", "email", "sms", "whatsapp"].includes(channel)) {
-    go(`/admin/customers/${id}`, { error: "Choose where the reminder should go." });
+    go(`/provider/subscriber/${id}`, { error: "Choose where the reminder should go." });
   }
 
   const preset = readText(formData, "preset");
@@ -334,11 +330,11 @@ export async function sendReminder(formData: FormData) {
     title = readText(formData, "title");
     body = readText(formData, "body");
     if (title.length < 3 || body.length < 3) {
-      go(`/admin/customers/${id}`, { error: "A custom reminder needs a title and a message." });
+      go(`/provider/subscriber/${id}`, { error: "A custom reminder needs a title and a message." });
     }
   }
   if (title.length > 80 || body.length > 400) {
-    go(`/admin/customers/${id}`, { error: "That reminder is too long." });
+    go(`/provider/subscriber/${id}`, { error: "That reminder is too long." });
   }
 
   run(
@@ -354,7 +350,7 @@ export async function sendReminder(formData: FormData) {
     channel === "portal"
       ? "Reminder is on the subscriber portal."
       : `Reminder is on the subscriber portal, marked as ${channel}. Inbox and phone delivery needs a mail or SMS account connected later.`;
-  go(`/admin/customers/${id}`, { notice: delivery });
+  go(`/provider/subscriber/${id}`, { notice: delivery });
 }
 
 export async function savePlan(formData: FormData) {
@@ -366,10 +362,10 @@ export async function savePlan(formData: FormData) {
   const dataCap = readText(formData, "data_cap") || "Unlimited";
   const description = readText(formData, "description");
 
-  if (name.length < 2) go("/admin/plans", { error: "Enter a plan name." });
-  if (!Number.isInteger(speed) || speed <= 0) go("/admin/plans", { error: "Enter the speed in Mbps." });
-  if (!Number.isInteger(price) || price <= 0) go("/admin/plans", { error: "Enter the monthly price in rupees." });
-  if (description.length < 8) go("/admin/plans", { error: "Add a short description of who the plan is for." });
+  if (name.length < 2) go("/provider/plans", { error: "Enter a plan name." });
+  if (!Number.isInteger(speed) || speed <= 0) go("/provider/plans", { error: "Enter the speed in Mbps." });
+  if (!Number.isInteger(price) || price <= 0) go("/provider/plans", { error: "Enter the monthly price in rupees." });
+  if (description.length < 8) go("/provider/plans", { error: "Add a short description of who the plan is for." });
 
   const clash = one<{ id: number }>(
     "SELECT id FROM plans WHERE provider_id = ? AND name = ? AND id != ?",
@@ -377,11 +373,11 @@ export async function savePlan(formData: FormData) {
     name,
     id,
   );
-  if (clash) go("/admin/plans", { error: "A plan with that name already exists." });
+  if (clash) go("/provider/plans", { error: "A plan with that name already exists." });
 
   if (id) {
     if (!one("SELECT id FROM plans WHERE id = ? AND provider_id = ?", id, session.providerId)) {
-      go("/admin/plans", { error: "That plan was not found." });
+      go("/provider/plans", { error: "That plan was not found." });
     }
     run(
       "UPDATE plans SET name = ?, speed_mbps = ?, price = ?, data_cap = ?, description = ? WHERE id = ? AND provider_id = ?",
@@ -406,23 +402,23 @@ export async function savePlan(formData: FormData) {
   }
 
   refresh();
-  go("/admin/plans", { notice: id ? "Plan updated." : "Plan added to the catalogue." });
+  go("/provider/plans", { notice: id ? "Plan updated." : "Plan added to the catalogue." });
 }
 
 export async function payBill(formData: FormData) {
   const session = await requireRole("customer");
   if (!allows(session.productPlan, "onlinePay")) {
-    go("/portal/pay", { error: "Online renewal is part of the provider's Ultra or Premium plan. Pay the office for now." });
+    go("/subscriber/pay", { error: "Online renewal is part of the provider's Ultra or Premium plan. Pay the office for now." });
   }
   const current = getSubscriberByUser(session.uid);
-  if (!current) go("/portal", { error: "No service line is linked to this login." });
+  if (!current) go("/subscriber", { error: "No service line is linked to this login." });
 
   const method = readText(formData, "method");
   const detail = readText(formData, "detail");
   if (!["UPI", "Card", "Net banking"].includes(method)) {
-    go("/portal/pay", { error: "Choose how you want to pay." });
+    go("/subscriber/pay", { error: "Choose how you want to pay." });
   }
-  if (detail.length > 80) go("/portal/pay", { error: "Keep the payer reference short." });
+  if (detail.length > 80) go("/subscriber/pay", { error: "Keep the payer reference short." });
 
   const today = todayISO();
   const periodEnd = renewalAfterPayment(current.renew_date, today);
@@ -455,9 +451,7 @@ export async function payBill(formData: FormData) {
   }
 
   refresh();
-  go(`/receipts/income/${paymentId}`, {
-    notice: `Payment ${reference} recorded for ${formatInr(current.price)}. Your renewal is now ${formatDate(periodEnd)}. No bank was charged — this desk keeps its own ledger.`,
-  });
+  go(`/subscriber/receipt/${paymentId}`);
 }
 
 function getSubscriberByUser(userId: number) {
@@ -476,13 +470,13 @@ export async function changePassword(formData: FormData) {
   const confirm = String(formData.get("confirm_password") ?? "");
   const user = one<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", session.uid);
   if (!user || !verifyPassword(currentPassword, user.password_hash)) {
-    go("/portal", { error: "The current password does not match." });
+    go("/subscriber", { error: "The current password does not match." });
   }
-  if (nextPassword.length < 6) go("/portal", { error: "Use at least 6 characters for the new password." });
-  if (nextPassword !== confirm) go("/portal", { error: "The new password and confirmation do not match." });
+  if (nextPassword.length < 6) go("/subscriber", { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go("/subscriber", { error: "The new password and confirmation do not match." });
   run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(nextPassword), session.uid);
   refresh();
-  go("/portal", { notice: "Password updated." });
+  go("/subscriber", { notice: "Password updated." });
 }
 
 export async function registerProvider(formData: FormData) {
@@ -547,7 +541,7 @@ export async function registerProvider(formData: FormData) {
   await setSession(userId);
   const chosen = CATALOG[plan];
   redirect(
-    `/admin/billing?notice=${encodeURIComponent(
+    `/provider/upgrade?notice=${encodeURIComponent(
       `${chosen.label} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.`,
     )}`,
   );
@@ -556,12 +550,12 @@ export async function registerProvider(formData: FormData) {
 export async function importCustomers(formData: FormData) {
   const session = await requireRole("admin");
   const parsed = parseCustomerCsv(readText(formData, "csv"));
-  if (parsed.error) go("/admin/import", { error: parsed.error });
-  if (parsed.rows.length === 0) go("/admin/import", { error: "There are no customer rows in that file." });
+  if (parsed.error) go("/provider/import", { error: parsed.error });
+  if (parsed.rows.length === 0) go("/provider/import", { error: "There are no customer rows in that file." });
 
   const usage = getUsage(session.providerId);
   const paused = trialBlock(usage);
-  if (paused) go("/admin/import", { error: paused });
+  if (paused) go("/provider/import", { error: paused });
   const plans = many<{ id: number; name: string }>("SELECT id, name FROM plans WHERE provider_id = ?", session.providerId);
   const planByName = new Map(plans.map((plan) => [plan.name.toLowerCase(), plan.id]));
   const seen = new Set<string>();
@@ -638,7 +632,7 @@ export async function importCustomers(formData: FormData) {
     throw error;
   }
   refresh();
-  go("/admin/import", {
+  go("/provider/import", {
     notice: `Imported ${imported}. Skipped ${issues.length}. Portal password for new logins is ${DEMO_CUSTOMER_PASSWORD}.`,
     batch: String(batchId),
   });
@@ -646,18 +640,18 @@ export async function importCustomers(formData: FormData) {
 
 export async function inviteStaff(formData: FormData) {
   const session = await requireRole("admin");
-  if (!session.isOwner) go("/admin/team", { error: "Only the desk owner can add staff." });
+  if (!session.isOwner) go("/provider/team", { error: "Only the desk owner can add staff." });
   const usage = getUsage(session.providerId);
   if (usage.staff >= usage.staffCap) {
-    go("/admin/team", { error: `${usage.catalog.label} includes ${usage.staffCap} staff login. Upgrade to add another.` });
+    go("/provider/team", { error: `${usage.catalog.label} includes ${usage.staffCap} staff login. Upgrade to add another.` });
   }
   const name = readText(formData, "name");
   const email = readText(formData, "email").toLowerCase();
   const mobile = readText(formData, "mobile").replace(/\s+/g, "");
-  if (name.length < 2) go("/admin/team", { error: "Enter the staff member's name." });
-  if (!/^[6-9]\d{9}$/.test(mobile)) go("/admin/team", { error: "Enter a 10-digit mobile number." });
-  if (!/^\S+@\S+\.\S+$/.test(email)) go("/admin/team", { error: "Enter a valid email." });
-  if (one("SELECT id FROM users WHERE email = ?", email)) go("/admin/team", { error: "That email is already used for a login." });
+  if (name.length < 2) go("/provider/team", { error: "Enter the staff member's name." });
+  if (!/^[6-9]\d{9}$/.test(mobile)) go("/provider/team", { error: "Enter a 10-digit mobile number." });
+  if (!/^\S+@\S+\.\S+$/.test(email)) go("/provider/team", { error: "Enter a valid email." });
+  if (one("SELECT id FROM users WHERE email = ?", email)) go("/provider/team", { error: "That email is already used for a login." });
   const password = crypto.randomBytes(4).toString("hex");
   run(
     "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner, mobile, login_password) VALUES (?, ?, 'admin', ?, ?, ?, 0, ?, ?)",
@@ -670,19 +664,19 @@ export async function inviteStaff(formData: FormData) {
     password,
   );
   refresh();
-  go("/admin/team", { notice: `${name} is on the team list, with email, password, and mobile saved on this page.` });
+  go("/provider/team", { notice: `${name} is on the team list, with email, password, and mobile saved on this page.` });
 }
 
 export async function reissueStaffPassword(formData: FormData) {
   const session = await requireRole("admin");
-  if (!session.isOwner) go("/admin/team", { error: "Only the desk owner can set a staff password." });
+  if (!session.isOwner) go("/provider/team", { error: "Only the desk owner can set a staff password." });
   const id = Number(formData.get("staff_id"));
   const person = one<{ id: number; name: string; is_owner: number }>(
     "SELECT id, name, is_owner FROM users WHERE id = ? AND provider_id = ? AND role = 'admin'",
     id,
     session.providerId,
   );
-  if (!person || person.is_owner) go("/admin/team", { error: "That staff login was not found." });
+  if (!person || person.is_owner) go("/provider/team", { error: "That staff login was not found." });
   const password = crypto.randomBytes(4).toString("hex");
   run(
     "UPDATE users SET password_hash = ?, login_password = ? WHERE id = ?",
@@ -691,30 +685,30 @@ export async function reissueStaffPassword(formData: FormData) {
     person.id,
   );
   refresh();
-  go("/admin/team", { notice: `A new password for ${person.name} is saved on this page.` });
+  go("/provider/team", { notice: `A new password for ${person.name} is saved on this page.` });
 }
 
 export async function changeProductPlan(formData: FormData) {
   const session = await requireRole("admin");
-  if (!session.isOwner) go("/admin/billing", { error: "Only the desk owner can change the plan." });
+  if (!session.isOwner) go("/provider/upgrade", { error: "Only the desk owner can change the plan." });
   const nextPlan = readText(formData, "product_plan");
-  if (!isProductPlan(nextPlan)) go("/admin/billing", { error: "Choose Pro, Ultra, or a Premium tier." });
+  if (!isProductPlan(nextPlan)) go("/provider/upgrade", { error: "Choose Pro, Ultra, or a Premium tier." });
   const usage = getUsage(session.providerId);
   const nextCustomers = customerLimit(nextPlan);
   const nextStaff = staffLimit(nextPlan);
   if (usage.customers > nextCustomers) {
-    go("/admin/billing", {
+    go("/provider/upgrade", {
       error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
     });
   }
   if (usage.staff > nextStaff) {
-    go("/admin/billing", {
+    go("/provider/upgrade", {
       error: `${CATALOG[nextPlan].label} holds ${nextStaff} staff logins. This desk has ${usage.staff}.`,
     });
   }
   run("UPDATE providers SET product_plan = ? WHERE id = ?", nextPlan, session.providerId);
   refresh();
-  go("/admin/billing", { notice: `This desk is now on ${CATALOG[nextPlan].label}.` });
+  go("/provider/upgrade", { notice: `This desk is now on ${CATALOG[nextPlan].label}.` });
 }
 
 const COMPLAINT_CATEGORIES = ["no_internet", "slow", "drops", "other"] as const;
@@ -723,15 +717,15 @@ const COMPLAINT_STATUSES = ["open", "in_progress", "resolved"] as const;
 export async function raiseComplaint(formData: FormData) {
   const session = await requireRole("customer");
   const current = getSubscriberByUser(session.uid);
-  if (!current) go("/portal/complaints", { error: "No service line is linked to this login." });
+  if (!current) go("/subscriber/complaints", { error: "No service line is linked to this login." });
 
   const category = readText(formData, "category");
   const details = readText(formData, "details");
   if (!COMPLAINT_CATEGORIES.includes(category as (typeof COMPLAINT_CATEGORIES)[number])) {
-    go("/portal/complaints", { error: "Choose the kind of problem." });
+    go("/subscriber/complaints", { error: "Choose the kind of problem." });
   }
-  if (details.length < 8) go("/portal/complaints", { error: "Describe what is happening, in a sentence or two." });
-  if (details.length > 500) go("/portal/complaints", { error: "Keep the complaint under 500 characters." });
+  if (details.length < 8) go("/subscriber/complaints", { error: "Describe what is happening, in a sentence or two." });
+  if (details.length > 500) go("/subscriber/complaints", { error: "Keep the complaint under 500 characters." });
 
   const stamp = nowStamp();
   run(
@@ -744,7 +738,7 @@ export async function raiseComplaint(formData: FormData) {
     stamp,
   );
   refresh();
-  go("/portal/complaints", { notice: "Complaint sent to your provider. You can follow it on this page." });
+  go("/subscriber/complaints", { notice: "Complaint sent to your provider. You can follow it on this page." });
 }
 
 export async function updateComplaint(formData: FormData) {
@@ -753,9 +747,9 @@ export async function updateComplaint(formData: FormData) {
   const status = readText(formData, "status");
   const note = readText(formData, "provider_note");
   if (!COMPLAINT_STATUSES.includes(status as (typeof COMPLAINT_STATUSES)[number])) {
-    go("/admin/complaints", { error: "Choose a status." });
+    go("/provider/complaints", { error: "Choose a status." });
   }
-  if (note.length > 400) go("/admin/complaints", { error: "Keep the note under 400 characters." });
+  if (note.length > 400) go("/provider/complaints", { error: "Keep the note under 400 characters." });
   const ticket = one<{ id: number }>(
     `SELECT k.id
      FROM complaints k
@@ -765,7 +759,7 @@ export async function updateComplaint(formData: FormData) {
     id,
     session.providerId,
   );
-  if (!ticket) go("/admin/complaints", { error: "That complaint was not found." });
+  if (!ticket) go("/provider/complaints", { error: "That complaint was not found." });
   run(
     "UPDATE complaints SET status = ?, provider_note = ?, updated_at = ? WHERE id = ?",
     status,
@@ -774,12 +768,12 @@ export async function updateComplaint(formData: FormData) {
     id,
   );
   refresh();
-  go("/admin/complaints", { notice: "Complaint updated." });
+  go("/provider/complaints", { notice: "Complaint updated." });
 }
 
 export async function saveBrand(formData: FormData) {
   const session = await requireRole("admin");
-  if (!session.isOwner) go("/admin/billing", { error: "Only the desk owner can change the ISP name." });
+  if (!session.isOwner) go("/provider/upgrade", { error: "Only the desk owner can change the ISP name." });
   const name = readText(formData, "isp_name");
   const phone = readText(formData, "support_phone").replace(/\s+/g, "");
   const logo = readText(formData, "logo_letter").slice(0, 2).toUpperCase();
@@ -787,11 +781,11 @@ export async function saveBrand(formData: FormData) {
   const address = readText(formData, "address");
   const city = readText(formData, "city");
   const state = readText(formData, "state");
-  if (name.length < 2) go("/admin/billing", { error: "Enter your ISP name." });
-  if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/admin/billing", { error: "Enter a 10-digit support number, or leave it blank." });
-  if (!isGstin(gstin)) go("/admin/billing", { error: "Enter a 15-character GSTIN, or leave it blank." });
-  if (!isIndianState(state)) go("/admin/billing", { error: "Choose a state." });
-  if (address.length > 160) go("/admin/billing", { error: "Keep the address shorter." });
+  if (name.length < 2) go("/provider/upgrade", { error: "Enter your ISP name." });
+  if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/provider/upgrade", { error: "Enter a 10-digit support number, or leave it blank." });
+  if (!isGstin(gstin)) go("/provider/upgrade", { error: "Enter a 15-character GSTIN, or leave it blank." });
+  if (!isIndianState(state)) go("/provider/upgrade", { error: "Choose a state." });
+  if (address.length > 160) go("/provider/upgrade", { error: "Keep the address shorter." });
   const currentLogo = one<{ logo_letter: string }>("SELECT logo_letter FROM providers WHERE id = ?", session.providerId);
   run(
     "UPDATE providers SET name = ?, support_phone = ?, logo_letter = ?, gstin = ?, address = ?, city = ?, state = ? WHERE id = ?",
@@ -805,7 +799,7 @@ export async function saveBrand(formData: FormData) {
     session.providerId,
   );
   refresh();
-  go("/admin/billing", { notice: "ISP details saved. New subscriber receipts use this GSTIN and address." });
+  go("/provider/upgrade", { notice: "ISP details saved. New subscriber receipts use this GSTIN and address." });
 }
 
 export async function savePlatformProfile(formData: FormData) {
@@ -817,12 +811,12 @@ export async function savePlatformProfile(formData: FormData) {
   const state = readText(formData, "state");
   const phone = readText(formData, "phone").replace(/\s+/g, "");
   const email = readText(formData, "email");
-  if (name.length < 2) go("/operator/settings", { error: "Enter the legal name for receipts." });
-  if (!isGstin(gstin)) go("/operator/settings", { error: "Enter a 15-character GSTIN, or leave it blank." });
-  if (!isIndianState(state)) go("/operator/settings", { error: "Choose a state." });
-  if (address.length > 160) go("/operator/settings", { error: "Keep the address shorter." });
-  if (phone && !/^[0-9]{8,15}$/.test(phone)) go("/operator/settings", { error: "Enter a phone number, or leave it blank." });
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) go("/operator/settings", { error: "Enter a valid email, or leave it blank." });
+  if (name.length < 2) go("/zignal/settings", { error: "Enter the legal name for receipts." });
+  if (!isGstin(gstin)) go("/zignal/settings", { error: "Enter a 15-character GSTIN, or leave it blank." });
+  if (!isIndianState(state)) go("/zignal/settings", { error: "Choose a state." });
+  if (address.length > 160) go("/zignal/settings", { error: "Keep the address shorter." });
+  if (phone && !/^[0-9]{8,15}$/.test(phone)) go("/zignal/settings", { error: "Enter a phone number, or leave it blank." });
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) go("/zignal/settings", { error: "Enter a valid email, or leave it blank." });
   run(
     `UPDATE platform_profile
      SET legal_name = ?, gstin = ?, address = ?, city = ?, state = ?, phone = ?, email = ?
@@ -836,14 +830,16 @@ export async function savePlatformProfile(formData: FormData) {
     email,
   );
   refresh();
-  go("/operator/settings", { notice: "Receipt details saved. Desk fees issued from now on use them." });
+  go("/zignal/settings", { notice: "Receipt details saved. Desk fees issued from now on use them." });
 }
 
 export async function recordDeskPayment(formData: FormData) {
   const session = await getSession();
   if (!session) redirect("/");
-  const back = session.kind === "operator" ? "/operator/revenue" : "/admin/payments";
+  const back = session.kind === "operator" ? "/zignal/revenue" : "/provider/revenue";
   const id = Number(formData.get("desk_payment_id"));
+  const receipt =
+    session.kind === "operator" ? `/zignal/receipt/${id}` : `/provider/receipt/desk/${id}`;
   const method = readText(formData, "method");
   const reference = readText(formData, "reference") || makeRef();
   const methods = ["UPI", "Bank transfer", "Cash", "Other"];
@@ -859,10 +855,10 @@ export async function recordDeskPayment(formData: FormData) {
   }
   if (!methods.includes(method)) go(back, { error: "Choose how this desk fee was paid." });
   if (reference.length > 80) go(back, { error: "Keep the reference short." });
-  if (row.paid_at) go(`/receipts/desk/${id}`, { notice: "This desk fee is already recorded." });
+  if (row.paid_at) go(receipt);
   run("UPDATE desk_payments SET method = ?, reference = ?, paid_at = ? WHERE id = ?", method, reference, nowStamp(), id);
   refresh();
-  go(`/receipts/desk/${id}`, { notice: "Payment recorded. Download the receipt below." });
+  go(receipt);
 }
 
 const SUPPORT_STATUSES = ["open", "in_progress", "resolved"] as const;
@@ -871,9 +867,9 @@ export async function raiseSupport(formData: FormData) {
   const session = await requireRole("admin");
   const mobile = readText(formData, "mobile").replace(/\s+/g, "");
   const message = readText(formData, "message");
-  if (!/^[6-9]\d{9}$/.test(mobile)) go("/admin/support", { error: "Enter a 10-digit mobile so Zignal Connect can call you." });
-  if (message.length < 8) go("/admin/support", { error: "Describe the concern in a sentence or two." });
-  if (message.length > 800) go("/admin/support", { error: "Keep the message under 800 characters." });
+  if (!/^[6-9]\d{9}$/.test(mobile)) go("/provider/support", { error: "Enter a 10-digit mobile so Zignal Connect can call you." });
+  if (message.length < 8) go("/provider/support", { error: "Describe the concern in a sentence or two." });
+  if (message.length > 800) go("/provider/support", { error: "Keep the message under 800 characters." });
   const stamp = nowStamp();
   run(
     `INSERT INTO support_requests (provider_id, user_id, mobile, message, status, reply, created_at, updated_at)
@@ -886,7 +882,7 @@ export async function raiseSupport(formData: FormData) {
     stamp,
   );
   refresh();
-  go("/admin/support", { notice: "Sent to Zignal Connect. You can follow the reply on this page." });
+  go("/provider/support", { notice: "Sent to Zignal Connect. You can follow the reply on this page." });
 }
 
 export async function replySupport(formData: FormData) {
@@ -895,14 +891,14 @@ export async function replySupport(formData: FormData) {
   const status = readText(formData, "status");
   const reply = readText(formData, "reply");
   if (!SUPPORT_STATUSES.includes(status as (typeof SUPPORT_STATUSES)[number])) {
-    go("/operator/support", { error: "Choose a status." });
+    go("/zignal/support", { error: "Choose a status." });
   }
-  if (reply.length > 800) go("/operator/support", { error: "Keep the reply under 800 characters." });
+  if (reply.length > 800) go("/zignal/support", { error: "Keep the reply under 800 characters." });
   const ticket = one<{ id: number }>("SELECT id FROM support_requests WHERE id = ?", id);
-  if (!ticket) go("/operator/support", { error: "That message was not found." });
+  if (!ticket) go("/zignal/support", { error: "That message was not found." });
   run("UPDATE support_requests SET status = ?, reply = ?, updated_at = ? WHERE id = ?", status, reply, nowStamp(), id);
   refresh();
-  go("/operator/support", { notice: "Reply saved. The provider can see it on Zignal support." });
+  go("/zignal/support", { notice: "Reply saved. The provider can see it on Zignal support." });
 }
 
 function readTheme(value: string) {
@@ -914,12 +910,12 @@ export async function saveDeskSettings(formData: FormData) {
   const name = readText(formData, "name");
   const mobile = readText(formData, "mobile").replace(/\s+/g, "");
   const theme = readTheme(readText(formData, "theme"));
-  if (name.length < 2) go("/admin/settings", { error: "Enter your name." });
-  if (mobile && !/^[6-9]\d{9}$/.test(mobile)) go("/admin/settings", { error: "Enter a 10-digit mobile, or leave it blank." });
-  if (!theme) go("/admin/settings", { error: "Choose light or dark." });
+  if (name.length < 2) go("/provider/settings", { error: "Enter your name." });
+  if (mobile && !/^[6-9]\d{9}$/.test(mobile)) go("/provider/settings", { error: "Enter a 10-digit mobile, or leave it blank." });
+  if (!theme) go("/provider/settings", { error: "Choose light or dark." });
   run("UPDATE users SET name = ?, mobile = ?, theme = ? WHERE id = ? AND provider_id = ?", name, mobile, theme, session.uid, session.providerId);
   refresh();
-  go("/admin/settings", { notice: "Settings saved." });
+  go("/provider/settings", { notice: "Settings saved." });
 }
 
 export async function changeDeskPassword(formData: FormData) {
@@ -929,10 +925,10 @@ export async function changeDeskPassword(formData: FormData) {
   const confirm = String(formData.get("confirm_password") ?? "");
   const user = one<{ password_hash: string; is_owner: number }>("SELECT password_hash, is_owner FROM users WHERE id = ?", session.uid);
   if (!user || !verifyPassword(currentPassword, user.password_hash)) {
-    go("/admin/settings", { error: "The current password does not match." });
+    go("/provider/settings", { error: "The current password does not match." });
   }
-  if (nextPassword.length < 6) go("/admin/settings", { error: "Use at least 6 characters for the new password." });
-  if (nextPassword !== confirm) go("/admin/settings", { error: "The new password and confirmation do not match." });
+  if (nextPassword.length < 6) go("/provider/settings", { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go("/provider/settings", { error: "The new password and confirmation do not match." });
   run(
     "UPDATE users SET password_hash = ?, login_password = ? WHERE id = ?",
     hashPassword(nextPassword),
@@ -940,18 +936,18 @@ export async function changeDeskPassword(formData: FormData) {
     session.uid,
   );
   refresh();
-  go("/admin/settings", { notice: "Password updated." });
+  go("/provider/settings", { notice: "Password updated." });
 }
 
 export async function saveOperatorSettings(formData: FormData) {
   const session = await requireOperator();
   const name = readText(formData, "name");
   const theme = readTheme(readText(formData, "theme"));
-  if (name.length < 2) go("/operator/settings", { error: "Enter your name." });
-  if (!theme) go("/operator/settings", { error: "Choose light or dark." });
+  if (name.length < 2) go("/zignal/settings", { error: "Enter your name." });
+  if (!theme) go("/zignal/settings", { error: "Choose light or dark." });
   run("UPDATE platform_admins SET name = ?, theme = ? WHERE id = ?", name, theme, session.uid);
   refresh();
-  go("/operator/settings", { notice: "Settings saved." });
+  go("/zignal/settings", { notice: "Settings saved." });
 }
 
 export async function changeOperatorPassword(formData: FormData) {
@@ -961,11 +957,11 @@ export async function changeOperatorPassword(formData: FormData) {
   const confirm = String(formData.get("confirm_password") ?? "");
   const user = one<{ password_hash: string }>("SELECT password_hash FROM platform_admins WHERE id = ?", session.uid);
   if (!user || !verifyPassword(currentPassword, user.password_hash)) {
-    go("/operator/settings", { error: "The current password does not match." });
+    go("/zignal/settings", { error: "The current password does not match." });
   }
-  if (nextPassword.length < 6) go("/operator/settings", { error: "Use at least 6 characters for the new password." });
-  if (nextPassword !== confirm) go("/operator/settings", { error: "The new password and confirmation do not match." });
+  if (nextPassword.length < 6) go("/zignal/settings", { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go("/zignal/settings", { error: "The new password and confirmation do not match." });
   run("UPDATE platform_admins SET password_hash = ? WHERE id = ?", hashPassword(nextPassword), session.uid);
   refresh();
-  go("/operator/settings", { notice: "Password updated." });
+  go("/zignal/settings", { notice: "Password updated." });
 }

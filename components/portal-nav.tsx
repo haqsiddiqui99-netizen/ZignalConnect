@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/portal", label: "My connection", exact: true },
-  { href: "/portal/pay", label: "Pay bill" },
-  { href: "/portal/history", label: "Receipts" },
-  { href: "/portal/complaints", label: "Complaints" },
+  { href: "/subscriber", label: "My connection", exact: true },
+  { href: "/subscriber/pay", label: "Pay bill" },
+  { href: "/subscriber/receipts", label: "Receipts" },
+  { href: "/subscriber/complaints", label: "Complaints" },
 ];
 
 export function PortalNav() {

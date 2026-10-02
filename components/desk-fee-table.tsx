@@ -12,10 +12,12 @@ export function DeskFeeTable({
   charges,
   canRecord,
   empty,
+  receiptBase,
 }: {
   charges: DeskCharge[];
   canRecord: boolean;
   empty: string;
+  receiptBase: string;
 }) {
   if (charges.length === 0) return <p>{empty}</p>;
   return (
@@ -72,7 +74,7 @@ export function DeskFeeTable({
                 )}
               </td>
               <td>
-                <a href={`/receipts/desk/${charge.id}`}>{charge.paid_at ? "Receipt" : "Invoice"}</a>
+                <a href={`${receiptBase}/${charge.id}`}>{charge.paid_at ? "Receipt" : "Invoice"}</a>
               </td>
             </tr>
           ))}

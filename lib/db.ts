@@ -210,6 +210,7 @@ function migrate(db: DatabaseSync) {
       }
     }
     db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("DROP TABLE IF EXISTS plans_next");
     db.exec(`
       CREATE TABLE plans_next (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,8 +240,9 @@ function migrate(db: DatabaseSync) {
   const providerSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'providers'").get() as
     | { sql: string }
     | undefined;
-  if (providerSql && !providerSql.sql.includes("'premium'")) {
+  if (providerSql && !providerSql.sql.includes("premium_3000") && !providerSql.sql.includes("'premium'")) {
     db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("DROP TABLE IF EXISTS providers_next");
     db.exec(`
       CREATE TABLE providers_next (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -274,6 +276,7 @@ function migrate(db: DatabaseSync) {
     | undefined;
   if (planSql && !planSql.sql.includes("'premium_3000'")) {
     db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("DROP TABLE IF EXISTS providers_next");
     db.exec(`
       CREATE TABLE providers_next (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -368,6 +371,7 @@ function ensureLineStatuses(db: DatabaseSync) {
     | undefined;
   if (!row || row.sql.includes("'disconnected'")) return;
   db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("DROP TABLE IF EXISTS customers_next");
   db.exec(`
     CREATE TABLE customers_next (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

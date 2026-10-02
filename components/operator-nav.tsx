@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/operator", label: "Providers", exact: true },
-  { href: "/operator/revenue", label: "Revenue" },
-  { href: "/operator/support", label: "Support" },
-  { href: "/operator/settings", label: "Settings" },
+  { href: "/zignal", label: "Providers", exact: true },
+  { href: "/zignal/revenue", label: "Revenue" },
+  { href: "/zignal/support", label: "Support" },
+  { href: "/zignal/settings", label: "Settings" },
 ];
 
 export function OperatorNav() {

@@ -4,17 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/admin", label: "Overview", exact: true },
-  { href: "/admin/customers", label: "Subscribers" },
-  { href: "/admin/import", label: "Import" },
-  { href: "/admin/plans", label: "Plans" },
-  { href: "/admin/payments", label: "Revenue" },
-  { href: "/admin/complaints", label: "Complaints" },
-  { href: "/admin/reports", label: "Reports" },
-  { href: "/admin/team", label: "Team" },
-  { href: "/admin/support", label: "Zignal support" },
-  { href: "/admin/billing", label: "Upgrade" },
-  { href: "/admin/settings", label: "Settings" },
+  { href: "/provider", label: "Overview", exact: true },
+  { href: "/provider/subscriber", label: "Subscribers" },
+  { href: "/provider/import", label: "Import" },
+  { href: "/provider/plans", label: "Plans" },
+  { href: "/provider/revenue", label: "Revenue" },
+  { href: "/provider/complaints", label: "Complaints" },
+  { href: "/provider/reports", label: "Reports" },
+  { href: "/provider/team", label: "Team" },
+  { href: "/provider/support", label: "Zignal support" },
+  { href: "/provider/upgrade", label: "Upgrade" },
+  { href: "/provider/settings", label: "Settings" },
 ];
 
 export function AdminNav() {

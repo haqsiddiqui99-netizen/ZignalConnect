@@ -34,8 +34,8 @@ export type OperatorSession = {
 export type Session = DeskSession | OperatorSession;
 
 export function homePath(session: Session) {
-  if (session.kind === "operator") return "/operator";
-  return session.role === "admin" ? "/admin" : "/portal";
+  if (session.kind === "operator") return "/zignal";
+  return session.role === "admin" ? "/provider" : "/subscriber";
 }
 
 type UserRow = {
