@@ -52,23 +52,27 @@ export default async function CustomerDetailPage({
         <StatusPill status={person.status} renewDate={person.renew_date} />
       </header>
       <Banner error={query.error} notice={query.notice} />
+      <article className="card" id="portal-password" style={{ marginBottom: 14 }}>
+        <h2>Portal password</h2>
+        <p style={{ margin: "8px 0 12px" }}>
+          This subscriber signs in with <strong>{person.email}</strong>. If they forget the password, reset it to{" "}
+          <strong>{DEMO_CUSTOMER_PASSWORD}</strong> and tell them.
+        </p>
+        <form action={resetPortalPassword}>
+          <input type="hidden" name="customer_id" value={person.id} />
+          <SubmitButton className="btn" pendingLabel="Resetting…">
+            Reset password to {DEMO_CUSTOMER_PASSWORD}
+          </SubmitButton>
+        </form>
+      </article>
       <section className="split">
         <article className="card">
           <h2>Service record</h2>
           <SubscriberForm plans={plans} subscriber={person} showArea={showArea} />
-          <form action={resetPortalPassword} style={{ marginTop: 16 }}>
-            <input type="hidden" name="customer_id" value={person.id} />
-            <p className="fine" style={{ marginBottom: 8 }}>
-              Portal login is {person.email}. Resetting the password sets it back to {DEMO_CUSTOMER_PASSWORD}.
-            </p>
-            <SubmitButton className="btn small" pendingLabel="Resetting…">
-              Reset portal password
-            </SubmitButton>
-          </form>
         </article>
         <div className="stack">
           <article className="card">
-            <h2>Take a payment</h2>
+            <h2>Record manual payment</h2>
             <p className="fine" style={{ marginBottom: 12 }}>
               {person.plan_name} is {formatSpeed(person.speed_mbps)} · {person.data_cap} · {formatInr(person.price)} a month.
               A full payment moves renewal to one month out and turns the line back on. A smaller amount is stored as a partial payment.

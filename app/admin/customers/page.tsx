@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { formatDate, formatInr } from "@/lib/format";
 import { listSubscribers } from "@/lib/queries";
 import { Banner, LineId, StatusPill } from "@/components/ui";
+import { LINE_STATUSES } from "@/lib/line-status";
 
 export const metadata = { title: "Subscribers" };
 
@@ -20,7 +21,9 @@ export default async function CustomersPage({
       <header className="page-head">
         <div>
           <h1>Subscribers</h1>
-          <p>{people.length} shown. Open a line to edit details, take a payment, or send a reminder.</p>
+          <p>
+            {people.length} shown. Click here on a line for the password reset and a manual payment.
+          </p>
         </div>
         <Link className="btn primary" href="/admin/customers/new">
           Add subscriber
@@ -36,8 +39,11 @@ export default async function CustomersPage({
         </select>
         <select name="status" defaultValue={params.status ?? ""}>
           <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="suspended">Paused</option>
+          {LINE_STATUSES.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
         </select>
         <button className="btn small" type="submit">
           Filter
@@ -57,6 +63,7 @@ export default async function CustomersPage({
                   <th>Renewal</th>
                   <th className="num">Monthly</th>
                   <th>Status</th>
+                  <th>Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -79,6 +86,9 @@ export default async function CustomersPage({
                     <td className="num">{formatInr(person.price)}</td>
                     <td>
                       <StatusPill status={person.status} renewDate={person.renew_date} />
+                    </td>
+                    <td>
+                      <Link href={`/admin/customers/${person.id}`}>Click here</Link>
                     </td>
                   </tr>
                 ))}

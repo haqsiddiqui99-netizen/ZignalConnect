@@ -1,5 +1,6 @@
 import { many, one, run } from "@/lib/db";
 import { CATALOG, OVERAGE_RATE, customerLimit, isProductPlan, overflowLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
+import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import { addDays, addMonths, daysUntil, monthBounds, monthLabel, todayISO } from "@/lib/format";
 
 export type Plan = {
@@ -21,7 +22,7 @@ export type Subscriber = {
   address: string;
   city: string;
   area: string;
-  status: "active" | "suspended";
+  status: LineStatus;
   plan_id: number;
   plan_name: string;
   speed_mbps: number;
@@ -172,7 +173,7 @@ export function listSubscribers(providerId: number, filters: { q?: string; statu
     where.push("(u.name LIKE ? OR u.email LIKE ? OR c.mobile LIKE ? OR c.city LIKE ? OR c.address LIKE ? OR c.area LIKE ?)");
     params.push(like, like, like, like, like, like);
   }
-  if (filters.status === "active" || filters.status === "suspended") {
+  if (filters.status && isLineStatus(filters.status)) {
     where.push("c.status = ?");
     params.push(filters.status);
   }

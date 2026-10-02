@@ -41,7 +41,7 @@ export default async function OperatorHome() {
       <article className="card" style={{ marginBottom: 16 }}>
         <p>
           {desk.subscribers} subscribers across every desk. {desk.overdue} lines are past their renewal date. A past-due
-          line stays active until someone pauses it. Disconnects and reconnects are not recorded.
+          line stays active until someone sets it to Paused, Disconnect, Collection, or Write off.
         </p>
         <p className="fine" style={{ marginTop: 8 }}>
           {desk.plans.map((item) => `${item.label} ${item.providers}`).join(" · ")}. Fees are {formatInr(CATALOG.pro.price)}{" "}

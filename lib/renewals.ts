@@ -43,7 +43,7 @@ export function issueRenewalReminders(providerId: number) {
   );
   let created = 0;
   for (const line of lines) {
-    if (line.status === "suspended") continue;
+    if (line.status === "suspended" || line.status === "disconnected" || line.status === "write_off") continue;
     const days = daysUntil(line.renew_date);
     const stage = days === 3 ? "d3" : days === 1 ? "d1" : days === 0 ? "due" : null;
     if (!stage) continue;

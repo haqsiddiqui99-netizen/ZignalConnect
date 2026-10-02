@@ -1,4 +1,5 @@
 import { isDate } from "@/lib/format";
+import { lineStatusFromImport, type LineStatus } from "@/lib/line-status";
 
 export const CSV_TEMPLATE = `name,email,mobile,address,city,plan,renewal date,installation date,status,notes,area
 Arjun Mehta,arjun.mehta@mail.com,9820091104,"14, Pali Hill Road",Mumbai,Home 300,2026-11-01,2026-02-01,active,ONT in the living room,West
@@ -14,7 +15,7 @@ export type ImportRow = {
   plan: string;
   renewDate: string;
   installationDate: string;
-  status: "active" | "suspended";
+  status: LineStatus;
   notes: string;
   area: string;
 };
@@ -113,8 +114,7 @@ export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: str
       const position = index.get(key);
       return position === undefined ? "" : (cells[position] ?? "");
     };
-    const statusText = pick("status").toLowerCase();
-    const status: ImportRow["status"] = statusText === "paused" || statusText === "suspended" ? "suspended" : "active";
+    const status = lineStatusFromImport(pick("status"));
     return {
       line: offset + 2,
       name: pick("name"),

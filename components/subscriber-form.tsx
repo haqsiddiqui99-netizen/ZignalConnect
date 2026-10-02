@@ -1,4 +1,5 @@
 import { createSubscriber, updateSubscriber } from "@/lib/actions";
+import { LINE_STATUSES } from "@/lib/line-status";
 import { addMonths, todayISO } from "@/lib/format";
 import type { Plan, Subscriber } from "@/lib/queries";
 import { SubmitButton } from "@/components/submit-button";
@@ -54,8 +55,11 @@ export function SubscriberForm({
         <label className="field">
           <span>Line status</span>
           <select name="status" defaultValue={subscriber?.status ?? "active"}>
-            <option value="active">Active</option>
-            <option value="suspended">Paused</option>
+            {LINE_STATUSES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </label>
       </div>

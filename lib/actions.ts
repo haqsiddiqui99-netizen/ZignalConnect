@@ -29,6 +29,7 @@ import {
   todayISO,
 } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import { cleanGstin, isGstin, isIndianState } from "@/lib/tax";
 import { getSubscriber, getUsage } from "@/lib/queries";
 
@@ -87,7 +88,7 @@ type SubscriberInput = {
   planId: number;
   renewDate: string;
   installationDate: string;
-  status: "active" | "suspended";
+  status: LineStatus;
   notes: string;
   area: string;
 };
@@ -116,7 +117,7 @@ function readSubscriberInput(
   if (city.length < 2) return { ok: false, error: "Enter the city." };
   if (!Number.isInteger(planId) || planId <= 0) return { ok: false, error: "Choose a plan." };
   if (!isDate(renewDate) || !isDate(installationDate)) return { ok: false, error: "Enter both dates." };
-  if (status !== "active" && status !== "suspended") return { ok: false, error: "Choose a line status." };
+  if (!isLineStatus(status)) return { ok: false, error: "Choose a line status." };
   if (notes.length > 500) return { ok: false, error: "Keep notes under 500 characters." };
   if (area.length > 80) return { ok: false, error: "Keep the area name short." };
   if (!one("SELECT id FROM plans WHERE id = ? AND provider_id = ?", planId, providerId)) {

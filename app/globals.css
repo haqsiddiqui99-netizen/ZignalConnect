@@ -168,6 +168,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
 th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
 th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+#portal-password { scroll-margin-top: 16px; }
 a.rowlink { text-decoration: none; border-bottom: 1px solid transparent; }
 a.rowlink:hover { border-bottom-color: var(--ink); }
 .pill {

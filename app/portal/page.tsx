@@ -19,10 +19,23 @@ import { getSubscriberByUserId, listPayments, listReminders } from "@/lib/querie
 export const metadata = { title: "My connection" };
 
 function billingReminder(status: string, renewDate: string, plan: string, price: number) {
-  if (status === "suspended") {
+  if (status === "suspended" || status === "disconnected") {
+    const word = status === "disconnected" ? "disconnected" : "paused";
     return {
-      title: "Service is paused",
-      body: `This line is paused. Pay ${formatInr(price)} to turn ${plan} back on. Renewal will move to ${formatDate(renewalAfterPayment(renewDate))}.`,
+      title: status === "disconnected" ? "Service is disconnected" : "Service is paused",
+      body: `This line is ${word}. Pay ${formatInr(price)} to turn ${plan} back on. Renewal will move to ${formatDate(renewalAfterPayment(renewDate))}.`,
+    };
+  }
+  if (status === "collection") {
+    return {
+      title: "Account is in collection",
+      body: `${plan} is in collection. The amount due is ${formatInr(price)}.`,
+    };
+  }
+  if (status === "write_off") {
+    return {
+      title: "Account is written off",
+      body: `${plan} is written off. Contact the provider before paying this line.`,
     };
   }
   const label = dueLabel(renewDate);

@@ -61,6 +61,7 @@ export function getDb() {
       updated_at TEXT NOT NULL
     );
   `);
+  ensureLineStatuses(globalForDb.lumenDb);
   return globalForDb.lumenDb;
 }
 
@@ -172,6 +173,7 @@ function migrate(db: DatabaseSync) {
   if (!columnNames(db, "customers").has("area")) {
     db.exec("ALTER TABLE customers ADD COLUMN area TEXT NOT NULL DEFAULT ''");
   }
+  ensureLineStatuses(db);
   if (!columnNames(db, "reminders").has("channel")) {
     db.exec("ALTER TABLE reminders ADD COLUMN channel TEXT NOT NULL DEFAULT 'portal'");
   }
@@ -358,6 +360,37 @@ function ensureReceiptSchema(db: DatabaseSync) {
   db.prepare(
     `INSERT OR IGNORE INTO platform_profile (id, legal_name, email) VALUES (1, 'Zignal Connect', ?)`,
   ).run(DEMO_OPERATOR.email);
+}
+
+function ensureLineStatuses(db: DatabaseSync) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'customers'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row || row.sql.includes("'disconnected'")) return;
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec(`
+    CREATE TABLE customers_next (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+      mobile TEXT NOT NULL,
+      address TEXT NOT NULL,
+      city TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('active', 'suspended', 'disconnected', 'collection', 'write_off')),
+      plan_id INTEGER NOT NULL REFERENCES plans(id),
+      renew_date TEXT NOT NULL,
+      installation_date TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      area TEXT NOT NULL DEFAULT ''
+    );
+  `);
+  db.exec(`
+    INSERT INTO customers_next (id, user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area)
+    SELECT id, user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area FROM customers
+  `);
+  db.exec("DROP TABLE customers");
+  db.exec("ALTER TABLE customers_next RENAME TO customers");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_customers_renew ON customers(renew_date)");
+  db.exec("PRAGMA foreign_keys = ON");
 }
 
 function ensurePlatformAdmin(db: DatabaseSync) {

@@ -39,7 +39,8 @@ export default async function ImportPage({
         <article className="card">
           <h2>Upload</h2>
           <p className="fine" style={{ marginBottom: 12 }}>
-            Use the template columns. Plan names must already exist. Dates can be YYYY-MM-DD or DD/MM/YYYY. New portal passwords are welcome123.
+            Use the template columns. Plan names must already exist. Dates can be YYYY-MM-DD or DD/MM/YYYY. Status can be
+            active, paused, disconnect, collection, or write off. New portal passwords are welcome123.
           </p>
           {plans.length === 0 ? (
             <p>
