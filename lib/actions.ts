@@ -2288,6 +2288,47 @@ export async function raiseComplaint(formData: FormData) {
   go("/subscriber/complaints", { notice: `Complaint ${code} sent to your provider. You can follow it on this page.` });
 }
 
+const CHAT_COMPLAINTS: Record<string, { category: "slow" | "no_internet"; details: string }> = {
+  slow: { category: "slow", details: "Internet is slow. Raised from the subscriber chat." },
+  not_working: { category: "no_internet", details: "Internet is not working. Raised from the subscriber chat." },
+  down: { category: "no_internet", details: "Internet is down. Raised from the subscriber chat." },
+};
+
+export async function raiseChatComplaint(kind: string) {
+  const session = await requireRole("customer");
+  const current = getSubscriberByUserId(session.uid);
+  if (!current) return { ok: false as const, error: "No service line is linked to this login." };
+  const ticket = CHAT_COMPLAINTS[kind];
+  if (!ticket) return { ok: false as const, error: "Choose one of the connection questions." };
+
+  const open = one<{ id: number }>(
+    `SELECT id FROM complaints
+     WHERE customer_id = ? AND category = ? AND details = ? AND status != 'resolved'
+     ORDER BY id DESC LIMIT 1`,
+    current.id,
+    ticket.category,
+    ticket.details,
+  );
+  if (open) {
+    return { ok: true as const, code: complaintCode(open.id), opened: false };
+  }
+
+  const stamp = nowStamp();
+  const saved = run(
+    `INSERT INTO complaints
+      (customer_id, category, details, status, provider_note, created_at, updated_at, sla_hours)
+     VALUES (?, ?, ?, 'new', '', ?, ?, ?)`,
+    current.id,
+    ticket.category,
+    ticket.details,
+    stamp,
+    stamp,
+    slaHoursFor(ticket.category),
+  );
+  refresh();
+  return { ok: true as const, code: complaintCode(Number(saved.lastInsertRowid)), opened: true };
+}
+
 export async function updateComplaint(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("complaint_id"));

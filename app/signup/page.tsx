@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { registerProvider } from "@/lib/actions";
 import { getSession, homePath } from "@/lib/auth";
+import { BrandMark } from "@/components/brand-mark";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { SignupPlans, type SignupPlan } from "@/components/signup-plans";
@@ -36,7 +37,7 @@ export default async function SignupPage({
     <main className="signup">
       <header className="signup-top">
         <div className="brand-lockup">
-          <div className="brand-mark">Z</div>
+          <BrandMark />
           <div>
             <strong>ZIGNAL</strong>
             <span className="signup-mark">Connect</span>

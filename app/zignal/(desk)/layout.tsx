@@ -1,6 +1,7 @@
 import { logout } from "@/lib/actions";
 import { requireOperator } from "@/lib/auth";
 import { OperatorNav } from "@/components/operator-nav";
+import { BrandMark } from "@/components/brand-mark";
 import { SubmitButton } from "@/components/submit-button";
 
 export default async function OperatorLayout({ children }: { children: React.ReactNode }) {
@@ -9,7 +10,7 @@ export default async function OperatorLayout({ children }: { children: React.Rea
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark">Z</div>
+          <BrandMark />
           <div>
             <strong>ZIGNAL</strong>
             <span>Connect · owner</span>

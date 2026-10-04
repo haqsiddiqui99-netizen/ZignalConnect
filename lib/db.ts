@@ -1,9 +1,11 @@
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { DEMO_ADMIN, DEMO_CUSTOMER_PASSWORD, DEMO_OPERATOR } from "@/lib/demo";
+import { DEMO_ADMIN, DEMO_OPERATOR } from "@/lib/demo";
 import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
+import { ZIGNAL_ADMIN_EMAIL, ZIGNAL_ADMIN_NAME, ZIGNAL_ADMIN_PASSWORD_HASH } from "@/lib/zignal-admin";
 
 const SCHEMA = 7;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
@@ -53,6 +55,7 @@ export function getDb() {
   }
   ensureCustomerTaxColumns(globalForDb.lumenDb);
   ensurePlatformAdmin(globalForDb.lumenDb);
+  retirePublishedDemoLogins(globalForDb.lumenDb);
   const operatorColumns = columnNames(globalForDb.lumenDb, "platform_admins");
   if (!operatorColumns.has("theme")) {
     globalForDb.lumenDb.exec("ALTER TABLE platform_admins ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'");
@@ -597,14 +600,46 @@ function ensurePlatformAdmin(db: DatabaseSync) {
       created_at TEXT NOT NULL
     );
   `);
-  const existing = db.prepare("SELECT id FROM platform_admins WHERE email = ?").get(DEMO_OPERATOR.email) as { id: number } | undefined;
+  const existing = db.prepare("SELECT id FROM platform_admins WHERE email = ?").get(ZIGNAL_ADMIN_EMAIL) as { id: number } | undefined;
   if (existing) return;
   db.prepare("INSERT INTO platform_admins (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)").run(
-    DEMO_OPERATOR.email,
-    hashPassword(DEMO_OPERATOR.password),
-    DEMO_OPERATOR.name,
+    ZIGNAL_ADMIN_EMAIL,
+    ZIGNAL_ADMIN_PASSWORD_HASH,
+    ZIGNAL_ADMIN_NAME,
     nowStamp(),
   );
+}
+
+const PUBLISHED_DEMO_PASSWORDS = ["admin123", "welcome123"];
+
+function retirePublishedDemoLogins(db: DatabaseSync) {
+  db.exec(`CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+  const retired = db.prepare("SELECT value FROM app_meta WHERE key = ?").get("published_demo_logins_retired") as
+    | { value: string }
+    | undefined;
+  if (!retired) {
+    const users = db.prepare("SELECT id, password_hash FROM users").all() as { id: number; password_hash: string }[];
+    const clearLogin = db.prepare("UPDATE users SET password_hash = ?, login_password = '' WHERE id = ?");
+    for (const user of users) {
+      const published = PUBLISHED_DEMO_PASSWORDS.some((password) => verifyPassword(password, user.password_hash));
+      if (!published) continue;
+      clearLogin.run(hashPassword(crypto.randomBytes(24).toString("base64url")), user.id);
+    }
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('published_demo_logins_retired', '1')").run();
+  }
+
+  const rotated = db.prepare("SELECT value FROM app_meta WHERE key = ?").get("zignal_admin_password_set") as
+    | { value: string }
+    | undefined;
+  if (!rotated) {
+    const operator = db.prepare("SELECT id, password_hash FROM platform_admins WHERE email = ?").get(ZIGNAL_ADMIN_EMAIL) as
+      | { id: number; password_hash: string }
+      | undefined;
+    if (operator && verifyPassword("zignal123", operator.password_hash)) {
+      db.prepare("UPDATE platform_admins SET password_hash = ? WHERE id = ?").run(ZIGNAL_ADMIN_PASSWORD_HASH, operator.id);
+    }
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('zignal_admin_password_set', '1')").run();
+  }
 }
 
 function ensureComplaintDesk(db: DatabaseSync) {
@@ -974,7 +1009,7 @@ function seed(db: DatabaseSync) {
   const providerId = Number(provider.lastInsertRowid);
   db.prepare(
     "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",
-  ).run(DEMO_ADMIN.email, hashPassword(DEMO_ADMIN.password), DEMO_ADMIN.name, stamp, providerId);
+  ).run(DEMO_ADMIN.email, hashPassword(crypto.randomBytes(24).toString("base64url")), DEMO_ADMIN.name, stamp, providerId);
 
   const planIds = new Map<string, { id: number; price: number }>();
   for (const plan of plans) {
@@ -982,7 +1017,7 @@ function seed(db: DatabaseSync) {
     planIds.set(plan[0], { id: Number(result.lastInsertRowid), price: plan[2] });
   }
 
-  const customerPassword = hashPassword(DEMO_CUSTOMER_PASSWORD);
+  const customerPassword = hashPassword(crypto.randomBytes(24).toString("base64url"));
   people.forEach((person, index) => {
     const plan = planIds.get(person.plan);
     if (!plan) throw new Error(`Missing plan ${person.plan}`);

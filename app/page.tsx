@@ -2,9 +2,9 @@ import Link from "next/link";
 import { login } from "@/lib/actions";
 import { getSession, homePath } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { DEMO_ADMIN, DEMO_CUSTOMER, DEMO_OPERATOR } from "@/lib/demo";
 import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
+import { BrandMark } from "@/components/brand-mark";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { redirect } from "next/navigation";
@@ -23,7 +23,7 @@ export default async function LoginPage({
     <main className="login">
       <section className="login-brand">
         <div className="brand-lockup">
-          <div className="brand-mark">Z</div>
+          <BrandMark />
           <div>
             <strong>ZIGNAL</strong>
             <span>Connect</span>
@@ -74,40 +74,6 @@ export default async function LoginPage({
           </form>
           <p className="fine" style={{ marginTop: 14 }}>
             New ISP? <Link href="/signup">Open a desk</Link>
-          </p>
-          <div style={{ height: 22 }} />
-          <p className="fine">Demo accounts on this computer</p>
-          <div className="demo-row" style={{ marginTop: 8 }}>
-            <form action={login}>
-              <input type="hidden" name="email" value={DEMO_ADMIN.email} />
-              <input type="hidden" name="password" value={DEMO_ADMIN.password} />
-              <SubmitButton className="btn small" pendingLabel="Opening desk…">
-                Enter as provider
-              </SubmitButton>
-            </form>
-            <form action={login}>
-              <input type="hidden" name="email" value={DEMO_CUSTOMER.email} />
-              <input type="hidden" name="password" value={DEMO_CUSTOMER.password} />
-              <SubmitButton className="btn small" pendingLabel="Opening portal…">
-                Enter as subscriber
-              </SubmitButton>
-            </form>
-            <form action={login}>
-              <input type="hidden" name="email" value={DEMO_OPERATOR.email} />
-              <input type="hidden" name="password" value={DEMO_OPERATOR.password} />
-              <SubmitButton className="btn small" pendingLabel="Opening Zignal…">
-                Enter as Zignal
-              </SubmitButton>
-            </form>
-          </div>
-          <p className="fine" style={{ marginTop: 12 }}>
-            Provider: {DEMO_ADMIN.email} / {DEMO_ADMIN.password}
-            <br />
-            Subscriber: {DEMO_CUSTOMER.email} / {DEMO_CUSTOMER.password}
-            <br />
-            Zignal Connect: {DEMO_OPERATOR.email} / {DEMO_OPERATOR.password}
-            <br />
-            Other seeded subscribers use the password welcome123.
           </p>
         </div>
       </section>
