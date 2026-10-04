@@ -34,14 +34,14 @@ export default async function NewCustomerPage({
   }));
   return (
     <>
-      <p>
-        <Link className="btn small" href="/provider/subscriber">
-          ← All subscribers
-        </Link>
-      </p>
       <header className="page-head">
         <div>
-          <h1>Add a subscriber</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/subscriber">
+              ← All subscribers
+            </Link>
+            <h1>Add a subscriber</h1>
+          </div>
           <p>This creates the service record and a portal login. The starting password is {DEMO_CUSTOMER_PASSWORD}.</p>
         </div>
         <Link className="btn" href="/provider/import">

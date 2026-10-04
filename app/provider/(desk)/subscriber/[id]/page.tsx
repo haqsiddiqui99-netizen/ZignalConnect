@@ -53,7 +53,8 @@ export default async function CustomerDetailPage({
           <p className="eyebrow-ink">{connectionId(person.id)}</p>
           <h1>{person.name}</h1>
           <p>
-            {person.address}, {person.city} · {person.mobile}
+            {person.address}, {[person.city, person.state, person.pincode].filter(Boolean).join(" ")}
+            {person.country ? `, ${person.country}` : ""} · {person.mobile}
           </p>
         </div>
         <StatusPill status={person.status} renewDate={person.renew_date} />

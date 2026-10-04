@@ -31,6 +31,19 @@ export function collectUpgradePayment(
   return { ok: false, reason: "gateway_required" };
 }
 
+/**
+ * Charge a subscriber bill.
+ * This is the only function a subscriber payment gateway should replace.
+ * On a confirmed charge, the caller records the payment and the receipt.
+ * Do not insert a payment or advance the renewal from the gateway itself.
+ */
+export function collectSubscriberPayment(
+  _customerId: number,
+  _payment: { method: string; detail: string; amount: number },
+): CheckoutResult {
+  return { ok: false, reason: "gateway_required" };
+}
+
 export function markUpgradePaid(orderId: number) {
   const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", orderId);
   if (!order || order.status === "paid") return order ?? null;

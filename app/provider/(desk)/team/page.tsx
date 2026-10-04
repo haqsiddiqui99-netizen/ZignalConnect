@@ -2,7 +2,8 @@ import { inviteStaff, reissueStaffPassword } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { limitLabel } from "@/lib/entitlements";
+import { STAFF_OVERAGE_RATE, limitLabel } from "@/lib/entitlements";
+import { formatInr } from "@/lib/format";
 import { getUsage, listStaff } from "@/lib/queries";
 
 export const metadata = { title: "My team" };
@@ -23,8 +24,11 @@ export default async function TeamPage({
         <div>
           <h1>My team</h1>
           <p>
-            {usage.staff} of {limitLabel(usage.staffCap)} staff logins on {usage.catalog.label}. Email, password, and
-            mobile stay on this page so you can share them.
+            {usage.staff} staff on {usage.catalog.label}. {limitLabel(usage.staffCap)} included
+            {usage.staffOverage > 0
+              ? `, and ${usage.staffOverage} extra at ₹${STAFF_OVERAGE_RATE} each (${formatInr(usage.staffOverageDue)} per month)`
+              : ""}
+            . Email, password, and mobile stay on this page so you can share them.
           </p>
         </div>
       </header>
@@ -74,9 +78,14 @@ export default async function TeamPage({
         </article>
         <article className="card">
           <h2>Add staff</h2>
-          {usage.staffSlots <= 0 ? (
-            <p>This plan has no spare staff logins. Pro includes 8, Ultra includes 20, and Premium has no cap.</p>
-          ) : session.isOwner ? (
+          {session.isOwner ? (
+            usage.staffSlots <= 0 ? (
+              <p className="fine">
+                {usage.catalog.label} includes {limitLabel(usage.staffCap)} staff logins. Another login is ₹{STAFF_OVERAGE_RATE} per month.
+              </p>
+            ) : null
+          ) : null}
+          {session.isOwner ? (
             <form action={inviteStaff} className="stack">
               <label className="field">
                 <span>Name</span>

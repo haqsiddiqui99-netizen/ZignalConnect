@@ -42,6 +42,15 @@ export function getDb() {
   if (customerColumns.size > 0 && !customerColumns.has("reminders")) {
     globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN reminders INTEGER NOT NULL DEFAULT 1");
   }
+  if (customerColumns.size > 0 && !customerColumns.has("pincode")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN pincode TEXT NOT NULL DEFAULT ''");
+  }
+  if (customerColumns.size > 0 && !customerColumns.has("state")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
+  }
+  if (customerColumns.size > 0 && !customerColumns.has("country")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+  }
   ensureCustomerTaxColumns(globalForDb.lumenDb);
   ensurePlatformAdmin(globalForDb.lumenDb);
   const operatorColumns = columnNames(globalForDb.lumenDb, "platform_admins");
@@ -355,11 +364,16 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("city")) db.exec("ALTER TABLE providers ADD COLUMN city TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("state")) db.exec("ALTER TABLE providers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("country")) db.exec("ALTER TABLE providers ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pincode")) db.exec("ALTER TABLE providers ADD COLUMN pincode TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("pay_method")) db.exec("ALTER TABLE providers ADD COLUMN pay_method TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("pay_via")) db.exec("ALTER TABLE providers ADD COLUMN pay_via TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("pay_holder")) db.exec("ALTER TABLE providers ADD COLUMN pay_holder TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("pay_detail")) db.exec("ALTER TABLE providers ADD COLUMN pay_detail TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("pay_expiry")) db.exec("ALTER TABLE providers ADD COLUMN pay_expiry TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("reminder_soon_title")) db.exec("ALTER TABLE providers ADD COLUMN reminder_soon_title TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("reminder_soon_body")) db.exec("ALTER TABLE providers ADD COLUMN reminder_soon_body TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("reminder_due_title")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_title TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("reminder_due_body")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_body TEXT NOT NULL DEFAULT ''");
 
   const batchColumns = columnNames(db, "import_batches");
   if (batchColumns.size > 0 && !batchColumns.has("kind")) {
@@ -460,6 +474,15 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (deskColumns.size > 0 && !deskColumns.has("prior_period")) {
     db.exec("ALTER TABLE desk_payments ADD COLUMN prior_period TEXT NOT NULL DEFAULT ''");
   }
+  if (deskColumns.size > 0 && !deskColumns.has("staff_overage_amount")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN staff_overage_amount INTEGER NOT NULL DEFAULT 0");
+  }
+  if (deskColumns.size > 0 && !deskColumns.has("unbilled_staff")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN unbilled_staff INTEGER NOT NULL DEFAULT 0");
+  }
+  if (deskColumns.size > 0 && !deskColumns.has("prior_staff_overage")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN prior_staff_overage INTEGER NOT NULL DEFAULT 0");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS platform_profile (
@@ -504,6 +527,9 @@ function ensureReceiptSchema(db: DatabaseSync) {
       unbilled_carried INTEGER NOT NULL DEFAULT 0,
       prior_overage INTEGER NOT NULL DEFAULT 0,
       prior_period TEXT NOT NULL DEFAULT '',
+      staff_overage_amount INTEGER NOT NULL DEFAULT 0,
+      unbilled_staff INTEGER NOT NULL DEFAULT 0,
+      prior_staff_overage INTEGER NOT NULL DEFAULT 0,
       UNIQUE(provider_id, period)
     );
   `);

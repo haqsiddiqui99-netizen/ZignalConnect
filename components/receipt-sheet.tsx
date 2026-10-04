@@ -1,5 +1,5 @@
 import { formatInr } from "@/lib/format";
-import { inrWords } from "@/lib/tax";
+import { gstIncluded, inrWords } from "@/lib/tax";
 
 export type ReceiptDoc = {
   title: string;
@@ -51,7 +51,50 @@ const CSS = `
 @media print { body { background: white; } .receipt { border: none; } }
 `;
 
+function scaleLines(lines: ReceiptDoc["lines"], target: number) {
+  const gross = lines.reduce((sum, line) => sum + line.amount, 0);
+  if (gross === 0 || gross === target) return lines;
+  let used = 0;
+  return lines.map((line, index) => {
+    const amount = index === lines.length - 1 ? target - used : Math.round((line.amount * target) / gross);
+    used += amount;
+    return { ...line, amount };
+  });
+}
+
+function withGst(doc: ReceiptDoc): ReceiptDoc {
+  const taxLine = /^(tax |cgst |sgst |igst )/i;
+  const taxLines = doc.lines.filter((line) => taxLine.test(line.description));
+  const goods = doc.lines.filter((line) => !taxLine.test(line.description));
+  const recorded = doc.cgst + doc.sgst + doc.igst;
+  if (recorded > 0) {
+    const cgst = Math.floor(recorded / 2);
+    return { ...doc, lines: goods.length ? goods : doc.lines, cgst, sgst: recorded - cgst, igst: 0, gstMode: "cgst" };
+  }
+  const base = goods.length ? goods : doc.lines;
+  const goodsSum = base.reduce((sum, line) => sum + line.amount, 0);
+  const included = gstIncluded(doc.total);
+  if (taxLines.length > 0 && Math.abs(goodsSum - included.taxable) <= 1) {
+    return { ...doc, lines: base, taxable: goodsSum, cgst: included.cgst, sgst: included.sgst, igst: 0, gstMode: "cgst" };
+  }
+  if (taxLines.length > 0) {
+    const tax = taxLines.reduce((sum, line) => sum + line.amount, 0);
+    const cgst = Math.floor(tax / 2);
+    return { ...doc, lines: base, taxable: goodsSum, cgst, sgst: tax - cgst, igst: 0, gstMode: "cgst" };
+  }
+  return {
+    ...doc,
+    lines: scaleLines(base, included.taxable),
+    taxable: included.taxable,
+    cgst: included.cgst,
+    sgst: included.sgst,
+    igst: 0,
+    gstMode: "cgst",
+  };
+}
+
 export function ReceiptSheet({ doc }: { doc: ReceiptDoc }) {
+  doc = withGst(doc);
   return (
     <article className="receipt">
       <style>{CSS}</style>
@@ -123,18 +166,6 @@ export function ReceiptSheet({ doc }: { doc: ReceiptDoc }) {
                 <td className="num">{formatInr(doc.sgst)}</td>
               </tr>
             </>
-          ) : null}
-          {doc.gstMode === "igst" ? (
-            <tr>
-              <td>IGST 18%</td>
-              <td className="num">{formatInr(doc.igst)}</td>
-            </tr>
-          ) : null}
-          {doc.gstMode === "none" ? (
-            <tr>
-              <td>GST</td>
-              <td className="num">Not charged</td>
-            </tr>
           ) : null}
           <tr className="grand">
             <td>Total</td>

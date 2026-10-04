@@ -5,7 +5,7 @@ import { TaxMode } from "@/components/tax-controls";
 
 export function InvoiceTaxFields() {
   const [tax, setTax] = useState("included");
-  const [customTax, setCustomTax] = useState("");
+  const [customTax, setCustomTax] = useState("18");
 
   return (
     <TaxMode
@@ -16,6 +16,7 @@ export function InvoiceTaxFields() {
       custom={customTax}
       onMode={setTax}
       onCustom={setCustomTax}
+      includedRate={18}
     />
   );
 }

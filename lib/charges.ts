@@ -1,5 +1,6 @@
 import { billCycleLabel, cycleAmount, isBillCycle } from "@/lib/bill-cycle";
 import { formatDate, formatInr, isDate } from "@/lib/format";
+import { addGstLines } from "@/lib/tax";
 
 export const CHARGE_KINDS = [
   { value: "router", label: "Router charge" },
@@ -258,8 +259,7 @@ function pushPlanLine(
   lines.push({ description: withSpan(plan.planLine, plan.activatedOn, plan.renewsOn), amount: plan.planAmount });
   const targets = plan.planId ? ["plan", `plan:${plan.planId}`] : ["plan"];
   const net = applyTargetDiscounts(lines, discounts, targets, plan.planAmount, taxLabel);
-  const tax = plan.planTaxIncluded || plan.planTaxPercent <= 0 ? 0 : Math.round((net * plan.planTaxPercent) / 100);
-  if (tax > 0) lines.push({ description: `Tax ${plan.planTaxPercent}% on ${taxLabel}`, amount: tax });
+  if (!plan.planTaxIncluded) lines.push(...addGstLines(net, taxLabel));
 }
 
 export function subscriberBill(input: {
@@ -287,9 +287,7 @@ export function subscriberBill(input: {
     lines.push({ description: withSpan(charge.label, charge.activated_on), amount: charge.amount });
     const net = applyTargetDiscounts(lines, discounts, charge.kind ?? "", charge.amount, charge.label);
     const included = typeof charge.taxIncluded === "boolean" ? charge.taxIncluded : charge.tax_included !== 0;
-    const percent = charge.taxPercent ?? charge.tax_percent ?? 0;
-    const tax = included || percent <= 0 ? 0 : Math.round((net * percent) / 100);
-    if (tax > 0) lines.push({ description: `Tax ${percent}% on ${charge.label}`, amount: tax });
+    if (!included) lines.push(...addGstLines(net, charge.label));
   }
   let subtotal = lines.reduce((sum, line) => sum + line.amount, 0);
   for (const discount of discounts) {
@@ -299,12 +297,7 @@ export function subscriberBill(input: {
     subtotal -= off;
     lines.push({ description: `${discount.name} on invoice`, amount: -off });
   }
-  if (!input.invoiceTaxIncluded && input.invoiceTaxPercent > 0 && subtotal > 0) {
-    lines.push({
-      description: `Tax ${input.invoiceTaxPercent}% on invoice`,
-      amount: Math.round((subtotal * input.invoiceTaxPercent) / 100),
-    });
-  }
+  if (!input.invoiceTaxIncluded && subtotal > 0) lines.push(...addGstLines(subtotal, "invoice"));
   const due = Math.max(0, lines.reduce((sum, line) => sum + line.amount, 0));
   if (input.paid && input.paid > due) lines.push({ description: "Additional amount", amount: input.paid - due });
   return { lines, due };
@@ -550,14 +543,14 @@ export function readBillSettings(formData: FormData):
     planTaxIncluded: planTax.taxIncluded,
     planTaxPercent: planTax.taxPercent,
     invoiceTaxIncluded: invoiceTax.taxIncluded,
-    invoiceTaxPercent: invoiceTax.taxPercent,
+    invoiceTaxPercent: invoiceTax.taxIncluded ? 18 : invoiceTax.taxPercent,
   };
 }
 
 export function billTaxNote(person: Pick<BillPerson, "plan_tax_included" | "plan_tax_percent" | "invoice_tax_included" | "invoice_tax_percent">) {
   const bits: string[] = [];
-  if (person.plan_tax_included === 0 && person.plan_tax_percent > 0) bits.push(`${person.plan_tax_percent}% on the plan`);
-  if (person.invoice_tax_included === 0 && person.invoice_tax_percent > 0) bits.push(`${person.invoice_tax_percent}% on the full invoice`);
+  if (person.plan_tax_included === 0) bits.push("CGST 9% and SGST 9% on the plan");
+  if (person.invoice_tax_included === 0) bits.push("CGST 9% and SGST 9% on the full invoice");
   if (bits.length === 0) return "";
   return ` Tax is added as ${bits.join(" and ")}.`;
 }

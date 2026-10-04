@@ -1,5 +1,5 @@
 import { many, one, run } from "@/lib/db";
-import { CATALOG, OVERAGE_RATE, customerLimit, isProductPlan, overflowLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
+import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isProductPlan, overflowLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import type { BillCycle } from "@/lib/bill-cycle";
 import { addDays, addMonths, daysUntil, monthBounds, monthLabel, todayISO } from "@/lib/format";
@@ -22,6 +22,9 @@ export type Subscriber = {
   mobile: string;
   address: string;
   city: string;
+  pincode: string;
+  state: string;
+  country: string;
   area: string;
   status: LineStatus;
   plan_id: number;
@@ -110,16 +113,21 @@ export type ProviderRecord = {
   city: string;
   state: string;
   country: string;
+  pincode: string;
   pay_method: string;
   pay_via: string;
   pay_holder: string;
   pay_detail: string;
   pay_expiry: string;
+  reminder_soon_title: string;
+  reminder_soon_body: string;
+  reminder_due_title: string;
+  reminder_due_body: string;
 };
 
 const subscriberSelect = `
   SELECT
-    c.id, c.user_id, u.name, u.email, c.mobile, c.address, c.city, c.area, c.status,
+    c.id, c.user_id, u.name, u.email, c.mobile, c.address, c.city, c.pincode, c.state, c.country, c.area, c.status,
     c.plan_id, c.plan_label, CASE WHEN c.plan_label <> '' THEN c.plan_label ELSE p.name END AS plan_name, p.speed_mbps, p.price, p.data_cap,
     p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
     c.bill_cycle, c.plan_amount, c.plan_cycle, c.reminders, c.plan_frequency, c.plan_tax_included, c.plan_tax_percent,
@@ -222,6 +230,7 @@ export function getUsage(providerId: number) {
   const customerCount = customers?.n ?? 0;
   const staffCount = staff?.n ?? 0;
   const overage = Math.max(0, customerCount - customerCap);
+  const staffOverage = Number.isFinite(staffCap) ? Math.max(0, staffCount - staffCap) : 0;
   return {
     provider,
     plan,
@@ -231,6 +240,8 @@ export function getUsage(providerId: number) {
     overflowCap: hardCap,
     overage,
     overageDue: overage * OVERAGE_RATE,
+    staffOverage,
+    staffOverageDue: staffOverage * STAFF_OVERAGE_RATE,
     staffCap,
     customerSlots: Math.max(0, customerCap - customerCount),
     overflowSlots: Math.max(0, hardCap - customerCount),

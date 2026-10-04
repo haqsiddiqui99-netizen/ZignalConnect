@@ -5,6 +5,7 @@ import { LINE_STATUSES } from "@/lib/line-status";
 import { todayISO } from "@/lib/format";
 import type { Plan, Subscriber } from "@/lib/queries";
 import { AccountSchedule } from "@/components/account-schedule";
+import { ServiceAddressFields } from "@/components/service-address";
 import { ChargeFields } from "@/components/charge-fields";
 import { InvoiceTaxFields } from "@/components/plan-bill-fields";
 import { SubmitButton } from "@/components/submit-button";
@@ -36,20 +37,16 @@ export function SubscriberForm({
           <input name="email" type="email" required defaultValue={subscriber?.email ?? ""} />
         </label>
       </div>
-      <div className="row-2">
-        <label className="field">
-          <span>Mobile</span>
-          <input name="mobile" inputMode="numeric" required defaultValue={subscriber?.mobile ?? ""} placeholder="98xxxxxxxx" />
-        </label>
-        <label className="field">
-          <span>City</span>
-          <input name="city" required defaultValue={subscriber?.city ?? ""} />
-        </label>
-      </div>
-      <label className="field">
-        <span>Service address</span>
-        <input name="address" required defaultValue={subscriber?.address ?? ""} />
-      </label>
+      <ServiceAddressFields
+        mobile={subscriber?.mobile ?? ""}
+        address={subscriber?.address ?? ""}
+        area={subscriber?.area ?? ""}
+        showArea={showArea}
+        city={subscriber?.city ?? ""}
+        pincode={subscriber?.pincode ?? ""}
+        state={subscriber?.state ?? ""}
+        country={subscriber?.country || "India"}
+      />
       {subscriber ? (
         <div className="row-2">
           <label className="field">
@@ -100,12 +97,6 @@ export function SubscriberForm({
           <InvoiceTaxFields />
         </AccountSchedule>
       )}
-      {showArea ? (
-        <label className="field">
-          <span>Area or branch</span>
-          <input name="area" defaultValue={subscriber?.area ?? ""} placeholder="West, Ward 12, Franchise A" />
-        </label>
-      ) : null}
       <label className="field">
         <span>Notes</span>
         <textarea name="notes" defaultValue={subscriber?.notes ?? ""} placeholder="Access notes, preferred contact time, equipment location" />

@@ -1,8 +1,9 @@
-import { changeDeskPassword, saveDeskPayment, saveDeskSettings } from "@/lib/actions";
+import { changeDeskPassword, saveDeskPayment, saveDeskSettings, saveReminderMessages } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { SavedPaymentFields } from "@/components/saved-payment";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
+import { REMINDER_DEFAULTS } from "@/lib/renewals";
 import { deskMobile, getProvider, type ProviderRecord } from "@/lib/queries";
 
 export const metadata = { title: "Settings" };
@@ -22,7 +23,7 @@ export default async function DeskSettings({
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Your name, mobile, theme, password, and payment preference for this desk.</p>
+          <p>Your name, mobile, theme, password, payment preference, and the two renewal reminders.</p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
@@ -89,6 +90,47 @@ export default async function DeskSettings({
           </form>
         ) : (
           <p>{paymentSummary(provider)}</p>
+        )}
+      </article>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Renewal reminders</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          Two notes are posted on the subscriber portal: one 3 days before the due date, and one on the due date. A line
+          that is already paid does not get either note. Use {"{name}"}, {"{plan}"}, {"{date}"}, {"{amount}"}, and {"{isp}"}
+          where the subscriber's details should appear. A new subscriber also gets one welcome message with the plan, the
+          next payment date, and the portal login.
+        </p>
+        {session.isOwner ? (
+          <form action={saveReminderMessages} className="stack">
+            <label className="field">
+              <span>3 days before — title</span>
+              <input name="soon_title" required maxLength={80} defaultValue={provider?.reminder_soon_title || REMINDER_DEFAULTS.soonTitle} />
+            </label>
+            <label className="field">
+              <span>3 days before — message</span>
+              <textarea name="soon_body" required maxLength={400} rows={3} defaultValue={provider?.reminder_soon_body || REMINDER_DEFAULTS.soonBody} />
+            </label>
+            <label className="field">
+              <span>Due date — title</span>
+              <input name="due_title" required maxLength={80} defaultValue={provider?.reminder_due_title || REMINDER_DEFAULTS.dueTitle} />
+            </label>
+            <label className="field">
+              <span>Due date — message</span>
+              <textarea name="due_body" required maxLength={400} rows={3} defaultValue={provider?.reminder_due_body || REMINDER_DEFAULTS.dueBody} />
+            </label>
+            <SubmitButton className="btn small">Save reminder messages</SubmitButton>
+          </form>
+        ) : (
+          <div className="stack">
+            <p>
+              <strong>{provider?.reminder_soon_title || REMINDER_DEFAULTS.soonTitle}</strong>
+            </p>
+            <p>{provider?.reminder_soon_body || REMINDER_DEFAULTS.soonBody}</p>
+            <p>
+              <strong>{provider?.reminder_due_title || REMINDER_DEFAULTS.dueTitle}</strong>
+            </p>
+            <p>{provider?.reminder_due_body || REMINDER_DEFAULTS.dueBody}</p>
+          </div>
         )}
       </article>
     </>

@@ -106,10 +106,19 @@ export function inrWords(amount: number) {
 }
 
 export function gstOnTop(taxable: number) {
-  const tax = Math.round((taxable * 18) / 100);
-  const cgst = Math.floor(tax / 2);
-  const sgst = tax - cgst;
+  const cgst = Math.round((taxable * 9) / 100);
+  const sgst = Math.round((taxable * 9) / 100);
+  const tax = cgst + sgst;
   return { taxable, tax, cgst, sgst, igst: tax, total: taxable + tax };
+}
+
+export function addGstLines(base: number, label: string) {
+  if (base <= 0) return [] as { description: string; amount: number }[];
+  const parts = gstOnTop(base);
+  return [
+    { description: `CGST 9% on ${label}`, amount: parts.cgst },
+    { description: `SGST 9% on ${label}`, amount: parts.sgst },
+  ];
 }
 
 export function gstIncluded(total: number) {

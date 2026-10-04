@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authenticate, clearSession, getSession, requireOperator, requireRole, setSession } from "@/lib/auth";
 import { normalizeDate, parsePlanCsv, wholeUnits } from "@/lib/csv";
 import crypto from "crypto";
+import { execFile } from "node:child_process";
 import { getDb, many, one, run } from "@/lib/db";
 import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import {
@@ -16,7 +17,6 @@ import {
   minimumPlan,
   planFitsBase,
   quotePremium,
-  staffLimit,
   type ProductPlan,
 } from "@/lib/entitlements";
 import {
@@ -41,8 +41,9 @@ import {
   type BillCycle,
 } from "@/lib/bill-cycle";
 import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax";
-import { collectUpgradePayment, markUpgradePaid, type UpgradeOrder } from "@/lib/checkout";
+import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, type UpgradeOrder } from "@/lib/checkout";
 import { syncDeskOverflow } from "@/lib/receipts";
+import { postOnboardingMessage } from "@/lib/renewals";
 import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
@@ -102,6 +103,9 @@ type SubscriberInput = {
   mobile: string;
   address: string;
   city: string;
+  pincode: string;
+  state: string;
+  country: string;
   planId: number;
   planLabel: string;
   renewDate: string;
@@ -124,6 +128,9 @@ function readSubscriberInput(
   const mobile = readText(formData, "mobile").replace(/\s+/g, "");
   const address = readText(formData, "address");
   const city = readText(formData, "city");
+  const pincode = readText(formData, "pincode").replace(/\s+/g, "");
+  const state = readText(formData, "state");
+  const country = readText(formData, "country");
   const planToken = String(formData.get("plan_id") ?? "");
   const planLabel = String(formData.get("plan_custom_name") ?? "").trim();
   const planId = planToken === "__custom__" ? 0 : Number(planToken);
@@ -139,7 +146,10 @@ function readSubscriberInput(
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email for the portal login." };
   if (!/^[6-9]\d{9}$/.test(mobile)) return { ok: false, error: "Enter a 10-digit mobile number." };
   if (address.length < 4) return { ok: false, error: "Enter the service address." };
+  if (!/^\d{6}$/.test(pincode)) return { ok: false, error: "Enter a 6-digit PIN code." };
   if (city.length < 2) return { ok: false, error: "Enter the city." };
+  if (state.length < 2 || state.length > 60) return { ok: false, error: "Enter the state." };
+  if (country.length < 2 || country.length > 40) return { ok: false, error: "Enter the country." };
   if (planToken === "__custom__") {
     if (planLabel.length < 2 || planLabel.length > 40) return { ok: false, error: "Name the custom internet plan in a few words." };
   } else if (!Number.isInteger(planId) || planId <= 0) return { ok: false, error: "Choose a plan." };
@@ -160,6 +170,9 @@ function readSubscriberInput(
       mobile,
       address,
       city,
+      pincode,
+      state,
+      country,
       planId,
       planLabel,
       renewDate,
@@ -182,6 +195,66 @@ function insertCustomPlan(providerId: number, amount: number) {
     amount,
   );
   return Number(row.lastInsertRowid);
+}
+
+function readPinDirectory(pincode: string) {
+  const url = `https://api.postalpincode.in/pincode/${pincode}`;
+  const parse = (body: string) => JSON.parse(body) as {
+    Status?: string;
+    PostOffice?: { District?: string; State?: string; Country?: string; Name?: string }[] | null;
+  }[];
+  return fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12000) })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return parse(await response.text());
+    })
+    .catch(
+      () =>
+        new Promise<ReturnType<typeof parse>>((resolve, reject) => {
+          if (process.platform !== "win32") {
+            reject(new Error("directory"));
+            return;
+          }
+          execFile(
+            "curl.exe",
+            ["-fsS", "--max-time", "20", url],
+            { windowsHide: true, maxBuffer: 2_000_000 },
+            (error, stdout) => {
+              if (error) reject(error);
+              else {
+                try {
+                  resolve(parse(stdout));
+                } catch (parseError) {
+                  reject(parseError);
+                }
+              }
+            },
+          );
+        }),
+    );
+}
+
+export async function lookupPincode(pin: string) {
+  await requireRole("admin");
+  const pincode = pin.replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(pincode)) return { ok: false as const, error: "Enter a 6-digit PIN code." };
+  try {
+    const payload = await readPinDirectory(pincode);
+    const offices = payload?.[0]?.Status === "Success" ? payload[0].PostOffice ?? [] : [];
+    const counts = new Map<string, { n: number; state: string; country: string }>();
+    for (const office of offices) {
+      const city = (office.District || office.Name || "").trim();
+      const state = (office.State || "").trim();
+      if (!city || !state) continue;
+      const current = counts.get(city);
+      counts.set(city, { n: (current?.n ?? 0) + 1, state: current?.state || state, country: current?.country || (office.Country || "").trim() || "India" });
+    }
+    const place = [...counts.entries()].sort((a, b) => b[1].n - a[1].n)[0];
+    if (!place) return { ok: false as const, error: "No place was found for this PIN code. Enter the city, state, and country." };
+    return { ok: true as const, city: place[0], state: place[1].state, country: place[1].country || "India" };
+  } catch {
+    return { ok: false as const, error: "The PIN code directory did not respond. Enter the city, state, and country." };
+  }
 }
 
 function trialBlock(usage: ReturnType<typeof getUsage>) {
@@ -244,13 +317,16 @@ export async function createSubscriber(formData: FormData) {
     );
     const customer = run(
       `INSERT INTO customers
-        (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders,
+        (user_id, mobile, address, city, pincode, state, country, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders,
          plan_frequency, plan_tax_included, plan_tax_percent, invoice_tax_included, invoice_tax_percent, plan_amount, plan_cycle, plan_label)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       Number(user.lastInsertRowid),
       input.mobile,
       input.address,
       input.city,
+      input.pincode,
+      input.state,
+      input.country,
       input.status,
       input.planId || insertCustomPlan(session.providerId, planLines.amount),
       input.renewDate,
@@ -305,6 +381,7 @@ export async function createSubscriber(formData: FormData) {
         plan.customName,
       );
     }
+    postOnboardingMessage(customerId, session.providerId, DEMO_CUSTOMER_PASSWORD);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -314,7 +391,7 @@ export async function createSubscriber(formData: FormData) {
   syncDeskOverflow(session.providerId);
   refresh();
   go(`/provider/subscriber/${customerId}`, {
-    notice: `Subscriber added. Portal password is ${DEMO_CUSTOMER_PASSWORD}.`,
+    notice: `Subscriber added. Portal password is ${DEMO_CUSTOMER_PASSWORD}. A welcome message with the plan, next payment date, and login is on their portal.`,
   });
 }
 
@@ -336,11 +413,14 @@ export async function updateSubscriber(formData: FormData) {
     run("UPDATE users SET name = ?, email = ? WHERE id = ?", input.name, input.email, current.user_id);
     run(
       `UPDATE customers
-       SET mobile = ?, address = ?, city = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?, bill_cycle = ?, reminders = ?, plan_amount = ?, plan_label = ?
+       SET mobile = ?, address = ?, city = ?, pincode = ?, state = ?, country = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?, bill_cycle = ?, reminders = ?, plan_amount = ?, plan_label = ?
        WHERE id = ?`,
       input.mobile,
       input.address,
       input.city,
+      input.pincode,
+      input.state,
+      input.country,
       input.status,
       input.planId,
       input.renewDate,
@@ -760,7 +840,7 @@ export async function sendReminder(formData: FormData) {
     go(`/provider/subscriber/${id}`, { error: "Email reminders are part of Pro, Ultra, and Premium." });
   }
   if ((channel === "sms" || channel === "whatsapp") && !allows(session.productPlan, "sms")) {
-    go(`/provider/subscriber/${id}`, { error: "SMS and WhatsApp reminders are part of Ultra and Premium." });
+    go(`/provider/subscriber/${id}`, { error: "This desk plan does not include SMS and WhatsApp reminders." });
   }
   if (!["portal", "email", "sms", "whatsapp"].includes(channel)) {
     go(`/provider/subscriber/${id}`, { error: "Choose where the reminder should go." });
@@ -857,7 +937,7 @@ export async function savePlan(formData: FormData) {
 export async function payBill(formData: FormData) {
   const session = await requireRole("customer");
   if (!allows(session.productPlan, "onlinePay")) {
-    go("/subscriber/pay", { error: "Online renewal is part of the provider's Ultra or Premium plan. Pay the office for now." });
+    go("/subscriber/pay", { error: "Online renewal is not on this desk plan. Pay the office for now." });
   }
   const current = getSubscriberByUserId(session.uid);
   if (!current) go("/subscriber", { error: "No service line is linked to this login." });
@@ -884,6 +964,9 @@ export async function payBill(formData: FormData) {
   const due = built.due;
   if (due <= 0) go("/subscriber/pay", { error: "Nothing is due on this line." });
   const lineItems = JSON.stringify(built.lines);
+
+  const result = collectSubscriberPayment(current.id, { method, detail, amount: due });
+  if (!result.ok) go("/subscriber/pay", { notice: "gateway" });
 
   const db = getDb();
   let paymentId = 0;
@@ -1408,6 +1491,7 @@ export async function importCustomers(formData: FormData) {
         );
         placedDiscounts.add(key);
       }
+      postOnboardingMessage(Number(customer.lastInsertRowid), session.providerId, DEMO_CUSTOMER_PASSWORD);
       seen.add(email);
       imported += 1;
       slots -= 1;
@@ -1432,7 +1516,7 @@ export async function importCustomers(formData: FormData) {
   if (imported > 0) syncDeskOverflow(session.providerId);
   refresh();
   go("/provider/import", {
-    notice: `${[`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ")}. Portal password for new logins is ${DEMO_CUSTOMER_PASSWORD}.`,
+    notice: `${[`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ")}. Portal password for new logins is ${DEMO_CUSTOMER_PASSWORD}. Each new subscriber has a welcome message on the portal.`,
     batch: String(batchId),
   });
 }
@@ -2038,9 +2122,6 @@ export async function inviteStaff(formData: FormData) {
   const session = await requireRole("admin");
   if (!session.isOwner) go("/provider/team", { error: "Only the desk owner can add staff." });
   const usage = getUsage(session.providerId);
-  if (usage.staff >= usage.staffCap) {
-    go("/provider/team", { error: `${usage.catalog.label} includes ${usage.staffCap} staff login. Upgrade to add another.` });
-  }
   const name = readText(formData, "name");
   const email = readText(formData, "email").toLowerCase();
   const mobile = readText(formData, "mobile").replace(/\s+/g, "");
@@ -2060,7 +2141,12 @@ export async function inviteStaff(formData: FormData) {
     password,
   );
   refresh();
-  go("/provider/team", { notice: `${name} is on the team list, with email, password, and mobile saved on this page.` });
+  const over = usage.staff + 1 > usage.staffCap;
+  go("/provider/team", {
+    notice: over
+      ? `${name} is on the team list. This login is above the ${limitLabel(usage.staffCap)} included on ${usage.catalog.label}, at ₹10 per month.`
+      : `${name} is on the team list, with email, password, and mobile saved on this page.`,
+  });
 }
 
 export async function reissueStaffPassword(formData: FormData) {
@@ -2103,15 +2189,9 @@ export async function openUpgradeCheckout(formData: FormData) {
     go("/provider/upgrade", { error: "Choose Pro, Ultra, or Premium." });
   }
   const nextCustomers = customerLimit(nextPlan);
-  const nextStaff = staffLimit(nextPlan);
   if (usage.customers > nextCustomers) {
     go("/provider/upgrade", {
       error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
-    });
-  }
-  if (Number.isFinite(nextStaff) && usage.staff > nextStaff) {
-    go("/provider/upgrade", {
-      error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextStaff)} staff logins. This desk has ${usage.staff}.`,
     });
   }
   if (nextPlan === usage.plan && subscriberBase === usage.subscriberBase) {
@@ -2166,15 +2246,9 @@ export async function changeProductPlan(formData: FormData) {
   if (!isProductPlan(nextPlan)) go("/provider/upgrade", { error: "Choose Pro, Ultra, or a Premium tier." });
   const usage = getUsage(session.providerId);
   const nextCustomers = customerLimit(nextPlan);
-  const nextStaff = staffLimit(nextPlan);
   if (usage.customers > nextCustomers) {
     go("/provider/upgrade", {
       error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
-    });
-  }
-  if (usage.staff > nextStaff) {
-    go("/provider/upgrade", {
-      error: `${CATALOG[nextPlan].label} holds ${nextStaff} staff logins. This desk has ${usage.staff}.`,
     });
   }
   run("UPDATE providers SET product_plan = ? WHERE id = ?", nextPlan, session.providerId);
@@ -2271,14 +2345,16 @@ export async function saveBrand(formData: FormData) {
   const city = readText(formData, "city");
   const state = readText(formData, "state");
   const country = readText(formData, "country");
+  const pincode = readText(formData, "pincode").replace(/\s+/g, "");
   if (name.length < 2) go("/provider/upgrade", { error: "Enter your ISP name." });
+  if (pincode && !/^\d{6}$/.test(pincode)) go("/provider/upgrade", { error: "Enter a 6-digit PIN code." });
   if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/provider/upgrade", { error: "Enter a 10-digit support number, or leave it blank." });
   if (!isIndianState(state)) go("/provider/upgrade", { error: "Choose a state." });
   if (address.length > 160) go("/provider/upgrade", { error: "Keep the address shorter." });
   if (country.length > 40) go("/provider/upgrade", { error: "Keep the country name shorter." });
   const currentLogo = one<{ logo_letter: string }>("SELECT logo_letter FROM providers WHERE id = ?", session.providerId);
   run(
-    "UPDATE providers SET name = ?, support_phone = ?, logo_letter = ?, gstin = ?, address = ?, city = ?, state = ?, country = ? WHERE id = ?",
+    "UPDATE providers SET name = ?, support_phone = ?, logo_letter = ?, gstin = ?, address = ?, city = ?, state = ?, country = ?, pincode = ? WHERE id = ?",
     name,
     phone,
     allows(session.productPlan, "logo") ? logo : (currentLogo?.logo_letter ?? ""),
@@ -2287,6 +2363,7 @@ export async function saveBrand(formData: FormData) {
     city,
     state,
     country,
+    pincode,
     session.providerId,
   );
   refresh();
@@ -2451,6 +2528,32 @@ export async function saveDeskSettings(formData: FormData) {
   run("UPDATE users SET name = ?, mobile = ?, theme = ? WHERE id = ? AND provider_id = ?", name, mobile, theme, session.uid, session.providerId);
   refresh();
   go("/provider/settings", { notice: "Settings saved." });
+}
+
+export async function saveReminderMessages(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner can edit reminder messages." });
+  const soonTitle = readText(formData, "soon_title");
+  const soonBody = readText(formData, "soon_body");
+  const dueTitle = readText(formData, "due_title");
+  const dueBody = readText(formData, "due_body");
+  if (soonTitle.length < 3 || dueTitle.length < 3) go("/provider/settings", { error: "Each reminder needs a title." });
+  if (soonBody.length < 3 || dueBody.length < 3) go("/provider/settings", { error: "Each reminder needs a message." });
+  if ([soonTitle, dueTitle].some((value) => value.length > 80) || [soonBody, dueBody].some((value) => value.length > 400)) {
+    go("/provider/settings", { error: "Keep each title under 80 characters and each message under 400." });
+  }
+  run(
+    `UPDATE providers
+     SET reminder_soon_title = ?, reminder_soon_body = ?, reminder_due_title = ?, reminder_due_body = ?
+     WHERE id = ?`,
+    soonTitle,
+    soonBody,
+    dueTitle,
+    dueBody,
+    session.providerId,
+  );
+  refresh();
+  go("/provider/settings", { notice: "Reminder messages saved. A line that is already paid does not receive one." });
 }
 
 const DESK_PAY_METHODS = ["credit_card", "debit_card", "upi", "net_banking", "auto_pay"] as const;

@@ -5,9 +5,9 @@ import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { CATALOG, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily, type ProductPlan } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
-import { INDIAN_STATES } from "@/lib/tax";
+import { IspPincodeFields } from "@/components/service-address";
 import { getUsage } from "@/lib/queries";
-import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
+import { carriedOverflow, carriedStaffOverflow, syncDeskOverflow } from "@/lib/receipts";
 
 export const metadata = { title: "Upgrade" };
 
@@ -21,6 +21,7 @@ export default async function BillingPage({
   syncDeskOverflow(session.providerId);
   const usage = getUsage(session.providerId);
   const unbilled = carriedOverflow(session.providerId);
+  const unbilledStaff = carriedStaffOverflow(session.providerId);
   const provider = usage.provider;
 
   return (
@@ -37,22 +38,28 @@ export default async function BillingPage({
             {usage.overage > 0
               ? ` ${usage.overage} subscribers are over the ${limitLabel(usage.customerCap)} cap (${formatInr(usage.overageDue)} at ₹3 each).`
               : ""}
+            {usage.staffOverage > 0
+              ? ` ${usage.staffOverage} staff ${usage.staffOverage === 1 ? "login is" : "logins are"} over the ${limitLabel(usage.staffCap)} included (${formatInr(usage.staffOverageDue)} at ₹10 each per month).`
+              : ""}
             {unbilled > 0
-              ? ` ${formatInr(unbilled)} was added after this month's invoice was paid. Next month's bill adds that amount, and another ₹3 for each overflow subscriber still on the book.`
+              ? ` ${formatInr(unbilled)} of subscriber overflow was added after this month's invoice was paid. Next month's bill adds that amount, and another ₹3 for each overflow subscriber still on the book.`
+              : ""}
+            {unbilledStaff > 0
+              ? ` ${formatInr(unbilledStaff)} of staff overflow was added after this month's invoice was paid.`
               : ""}
           </p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
       <p className="fine" style={{ marginBottom: 12 }}>
-        Upgrade opens a payment page for that plan. The monthly fee, the ₹3 overflow, and extra messages at ₹0.50 are
-        prices on the plan. The payment gateway is the only piece still to connect.
+        Upgrade opens a payment page for that plan. The monthly fee, the ₹3 subscriber overflow, extra staff at ₹10
+        each, and extra messages at ₹0.50 are prices on the plan. The payment gateway is the only piece still to connect.
       </p>
       <section className="plan-pick">
         {(["pro", "ultra"] as ProductPlan[]).map((plan) => {
           const item = CATALOG[plan];
           const current = plan === usage.plan;
-          const tooSmall = usage.customers > item.customers || usage.staff > item.staff;
+          const tooSmall = usage.customers > item.customers;
           return (
             <article className={current ? "card current" : "card"} key={plan}>
               <p className="fine">{current ? "Current plan" : "Switch to"}</p>
@@ -66,7 +73,9 @@ export default async function BillingPage({
                 {limitLabel(item.customers)} customers · {limitLabel(item.reminders)} reminders · {limitLabel(item.staff)}{" "}
                 staff · {item.trialDays}-day trial
               </p>
-              <p className="fine">Overflow to {limitLabel(overflowLimit(plan))} at ₹3 each. Extra messages ₹0.50.</p>
+              <p className="fine">
+                Overflow to {limitLabel(overflowLimit(plan))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
+              </p>
               <ul className="fine" style={{ paddingLeft: 18 }}>
                 {PLAN_POINTS.filter((feature) => feature.plans.includes(planFamily(plan))).map((feature) => (
                   <li key={feature.label}>{feature.label}</li>
@@ -93,12 +102,14 @@ export default async function BillingPage({
             from {formatInr(CATALOG.premium_3000.price)}
           </p>
           <p className="fine">per month, set from the subscriber base</p>
-          <p style={{ margin: "10px 0" }}>Unlimited staff. The rate is worked out when you upgrade.</p>
+          <p style={{ margin: "10px 0" }}>
+            20 staff for every 10,000 subscribers. Extra staff are ₹10 each per month. The rate is worked out when you upgrade.
+          </p>
           <p className="fine">
-            Up to {limitLabel(CATALOG.premium_30000.customers)} customers · unlimited staff ·{" "}
+            Up to {limitLabel(CATALOG.premium_30000.customers)} customers · 20 staff per 10,000 subscribers ·{" "}
             {CATALOG.premium_3000.trialDays}-day trial
           </p>
-          <p className="fine">Overflow at ₹3 each. Extra messages ₹0.50.</p>
+          <p className="fine">Overflow at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.</p>
           <ul className="fine" style={{ paddingLeft: 18 }}>
             {PLAN_POINTS.filter((feature) => feature.plans.includes("premium")).map((feature) => (
               <li key={feature.label}>{feature.label}</li>
@@ -144,31 +155,15 @@ export default async function BillingPage({
                 <input name="gstin" defaultValue={provider?.gstin ?? ""} placeholder="22AAAAA0000A1Z5" />
               </label>
             </div>
-            <label className="field">
-              <span>Address</span>
-              <input name="address" defaultValue={provider?.address ?? ""} />
-            </label>
-            <div className="isp-line three">
-              <label className="field">
-                <span>City</span>
-                <input name="city" defaultValue={provider?.city ?? ""} />
-              </label>
-              <label className="field">
-                <span>State</span>
-                <select name="state" defaultValue={provider?.state ?? ""}>
-                  <option value="">Not set</option>
-                  {INDIAN_STATES.map((state) => (
-                    <option key={state}>{state}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Country</span>
-                <input name="country" defaultValue={provider?.country || "India"} maxLength={40} />
-              </label>
-            </div>
+            <IspPincodeFields
+              address={provider?.address ?? ""}
+              pincode={provider?.pincode ?? ""}
+              city={provider?.city ?? ""}
+              state={provider?.state ?? ""}
+              country={provider?.country || "India"}
+            />
             {allows(session.productPlan, "logo") ? null : (
-              <p className="fine">A short logo mark is part of Ultra and Premium.</p>
+              <p className="fine">This desk plan does not include a logo mark.</p>
             )}
             <SubmitButton className="btn small">Save ISP details</SubmitButton>
           </form>
@@ -192,10 +187,16 @@ export default async function BillingPage({
                 <input defaultValue={provider?.gstin ?? ""} disabled readOnly />
               </label>
             </div>
-            <label className="field">
-              <span>Address</span>
-              <input defaultValue={provider?.address ?? ""} disabled readOnly />
-            </label>
+            <div className="row-2">
+              <label className="field">
+                <span>Address</span>
+                <input defaultValue={provider?.address ?? ""} disabled readOnly />
+              </label>
+              <label className="field">
+                <span>PIN code</span>
+                <input defaultValue={provider?.pincode ?? ""} disabled readOnly />
+              </label>
+            </div>
             <div className="isp-line three">
               <label className="field">
                 <span>City</span>

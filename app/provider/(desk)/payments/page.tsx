@@ -18,14 +18,14 @@ export default async function ImportPaymentsPage({
 
   return (
     <>
-      <p>
-        <Link className="btn small" href="/provider/subscriber">
-          ← All subscribers
-        </Link>
-      </p>
       <header className="page-head">
         <div>
-          <h1>Import payments</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/subscriber">
+              ← All subscribers
+            </Link>
+            <h1>Import payments</h1>
+          </div>
           <p>Record payments for subscribers who are already on this desk. Each row is one payment.</p>
         </div>
         <a className="btn" href="/provider/payments/template">

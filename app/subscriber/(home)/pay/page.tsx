@@ -16,10 +16,10 @@ export const metadata = { title: "Pay bill" };
 export default async function PayPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const session = await requireRole("customer");
-  const { error } = await searchParams;
+  const query = await searchParams;
   const person = getSubscriberByUserId(session.uid);
   if (!person) notFound();
   const extras = openCharges(listCustomerCharges(person.id));
@@ -27,6 +27,10 @@ export default async function PayPage({
   const extraPlans = listCustomerExtraPlans(person.id);
   const due = invoiceFor(person, extras, { discounts, extraPlans }).due;
   const nextDate = nextRenewalDate(person.renew_date, todayISO(), person.bill_cycle);
+  const notice =
+    query.notice === "gateway"
+      ? "The payment gateway is not connected yet. Nothing was charged, the renewal is unchanged, and no receipt was issued."
+      : query.notice;
 
   return (
     <>
@@ -43,7 +47,7 @@ export default async function PayPage({
           </p>
         </div>
       </header>
-      <Banner error={error} />
+      <Banner error={query.error} notice={notice} />
       <article className="card" style={{ maxWidth: 640 }}>
         <p className="hero-price" style={{ color: "var(--ink)" }}>
           {formatInr(due)}
@@ -51,7 +55,7 @@ export default async function PayPage({
         {allows(session.productPlan, "onlinePay") ? (
           <>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
-          Paying this {billCycleLabel(person.bill_cycle).toLowerCase()} bill moves your renewal {billCycleAdvance(person.bill_cycle)} ahead, to {formatDate(nextDate)}. If the line is paused, it comes back on. This records the payment on the provider desk and does not charge a real card or UPI account.
+          The payment gateway collects this {billCycleLabel(person.bill_cycle).toLowerCase()} bill. A confirmed charge moves the renewal {billCycleAdvance(person.bill_cycle)} ahead, to {formatDate(nextDate)}, and that is when the receipt is issued. Until the gateway is connected, nothing is taken from a card or UPI account.
           {extras.length > 0
             ? ` This bill adds ${extras.map((charge) => chargeSummary(charge)).join(", ")}. One-time charges are left off later bills.`
             : ""}
@@ -63,7 +67,7 @@ export default async function PayPage({
         </p>
         <form action={payBill} className="stack">
           <PayMethods />
-          <SubmitButton pendingLabel="Recording payment…">Pay {formatInr(due)}</SubmitButton>
+          <SubmitButton pendingLabel="Contacting the gateway…">Pay {formatInr(due)}</SubmitButton>
         </form>
           </>
         ) : (

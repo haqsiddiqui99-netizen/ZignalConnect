@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { openUpgradeCheckout } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
-import { CATALOG, limitLabel, overflowLimit, quotePremium } from "@/lib/entitlements";
+import { CATALOG, STAFF_OVERAGE_RATE, limitLabel, overflowLimit, quotePremium } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { useState } from "react";
 
@@ -20,7 +20,8 @@ export function PremiumQuote({
   const count = Number(base);
   const quote = base.trim() === "" ? null : quotePremium(count);
   const plan = quote?.ok ? CATALOG[quote.plan] : null;
-  const tooSmall = Boolean(plan && (customers > plan.customers || staff > plan.staff));
+  const tooSmall = Boolean(plan && customers > plan.customers);
+  const extraStaff = plan ? Math.max(0, staff - plan.staff) : 0;
 
   return (
     <form action={openUpgradeCheckout} className="stack">
@@ -48,8 +49,8 @@ export function PremiumQuote({
             {limitLabel(count)} subscribers is held on Premium for up to {limitLabel(plan.customers)}.
           </p>
           <p className="fine">
-            {limitLabel(plan.reminders)} reminders · unlimited staff · {plan.trialDays}-day trial. Overflow to{" "}
-            {limitLabel(overflowLimit(quote.plan))} at ₹3 each. Extra messages ₹0.50.
+            {limitLabel(plan.reminders)} reminders · {limitLabel(plan.staff)} staff · {plan.trialDays}-day trial. Overflow to{" "}
+            {limitLabel(overflowLimit(quote.plan))} at ₹3 each. Extra staff ₹{STAFF_OVERAGE_RATE} each per month. Extra messages ₹0.50.
           </p>
         </div>
       ) : quote && !quote.ok && quote.custom ? (
@@ -67,9 +68,14 @@ export function PremiumQuote({
       ) : (
         <p className="fine">The monthly rate appears here once the subscriber base is entered.</p>
       )}
+      {extraStaff > 0 && plan ? (
+        <p className="fine">
+          {limitLabel(extraStaff)} staff above the {limitLabel(plan.staff)} included. That is {formatInr(extraStaff * STAFF_OVERAGE_RATE)} per month.
+        </p>
+      ) : null}
       {tooSmall ? (
         <p className="fine">
-          This desk already has {limitLabel(customers)} customers and {limitLabel(staff)} staff. Enter a base that covers them.
+          This desk already has {limitLabel(customers)} customers. Enter a base that covers them.
         </p>
       ) : quote?.ok ? (
         <SubmitButton pendingLabel="Opening payment…">Continue to payment</SubmitButton>

@@ -23,14 +23,14 @@ export default async function ImportPage({
 
   return (
     <>
-      <p>
-        <Link className="btn small" href="/provider/subscriber">
-          ← All subscribers
-        </Link>
-      </p>
       <header className="page-head">
         <div>
-          <h1>Import Subscribers</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/subscriber">
+              ← All subscribers
+            </Link>
+            <h1>Import Subscribers</h1>
+          </div>
           <p>
             {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}. Overflow allows{" "}
             {limitLabel(usage.overflowCap)}. {usage.overflowSlots} can be added from this file.

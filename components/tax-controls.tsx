@@ -12,6 +12,7 @@ export function TaxMode({
   custom,
   onMode,
   onCustom,
+  includedRate,
 }: {
   label: string;
   name: string;
@@ -20,14 +21,22 @@ export function TaxMode({
   custom: string;
   onMode: (mode: string) => void;
   onCustom: (value: string) => void;
+  includedRate?: number;
 }) {
   const locked = mode !== "custom";
-  const shown = mode === "custom" ? custom : PRESET_VALUES.has(mode) ? mode : "";
+  const shown =
+    mode === "custom"
+      ? custom
+      : PRESET_VALUES.has(mode)
+        ? mode
+        : mode === "included" && includedRate
+          ? String(includedRate)
+          : "";
 
   function choose(value: string) {
     onMode(value);
     if (PRESET_VALUES.has(value)) onCustom(value);
-    else if (value === "included") onCustom("");
+    else if (value === "included") onCustom(includedRate ? String(includedRate) : "");
     else onCustom(custom);
   }
 

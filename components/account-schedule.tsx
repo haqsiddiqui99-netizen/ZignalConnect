@@ -49,6 +49,12 @@ export function AccountSchedule({
           </select>
         </label>
       </div>
+      {children ? (
+        <p className="fine">
+          Goods and Services Tax (GST) at a standard rate of 18% is charged on all internet, mobile data, and broadband
+          telecom services in India.
+        </p>
+      ) : null}
       <div className="row-2">
         <label className="field">
           <span>Installation date</span>

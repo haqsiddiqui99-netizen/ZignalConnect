@@ -160,6 +160,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
 .page-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 22px; }
 .page-head h1 { font-size: 40px; margin: 0; line-height: 1; }
 .page-head p, .lede-sm { color: var(--muted); margin-top: 6px; }
+.page-head .head-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.page-head .head-line h1 { margin: 0; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
 .stats.pair { grid-template-columns: repeat(2, 1fr); }

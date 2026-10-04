@@ -61,7 +61,7 @@ function billingReminder(status: string, renewDate: string, plan: string, dueAmo
   }
   return {
     title: "Account is current",
-    body: `Next renewal is ${formatDate(renewDate)}. A reminder stays on this page during the week before it is due.`,
+    body: `Next renewal is ${formatDate(renewDate)}. A reminder is posted here 3 days before that date and on the due date, if the bill is still open.`,
   };
 }
 
@@ -123,7 +123,7 @@ export default async function PortalHome({
           </div>
           {allows(session.productPlan, "renewalReminders") && person.reminders ? (
             <p className="fine">
-              On a paid desk, a reminder is posted here 3 days before renewal, 1 day before, and on the due date. The due-date note says the line will be disconnected if unpaid. These stay on this page until a mail or SMS account is connected.
+              A reminder is posted here 3 days before the due date and on the due date, using the wording your provider saved. A bill that is already paid does not get one. These stay on this page until a mail or SMS account is connected.
             </p>
           ) : null}
           {reminders.length > 0 ? (
@@ -150,7 +150,8 @@ export default async function PortalHome({
             <dd>{person.email}</dd>
             <dt>Address</dt>
             <dd>
-              {person.address}, {person.city}
+              {person.address}, {[person.city, person.state, person.pincode].filter(Boolean).join(" ")}
+              {person.country ? `, ${person.country}` : ""}
             </dd>
             <dt>Installed</dt>
             <dd>{formatDate(person.installation_date)}</dd>

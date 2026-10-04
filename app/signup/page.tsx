@@ -27,7 +27,7 @@ export default async function SignupPage({
       customers: item.customers,
       blurb: item.blurb,
       line: `${limitLabel(item.customers)} customers · ${limitLabel(item.reminders)} reminders · ${limitLabel(item.staff)} staff · ${item.trialDays}-day trial`,
-      overflow: `Overflow to ${limitLabel(overflowLimit(plan))} at ₹3 each. Extra messages ₹0.50.`,
+      overflow: `Overflow to ${limitLabel(overflowLimit(plan))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.`,
       points: PLAN_POINTS.filter((point) => point.plans.includes(planFamily(plan))).map((point) => point.label),
     };
   });

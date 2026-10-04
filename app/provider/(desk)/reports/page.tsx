@@ -104,7 +104,7 @@ export default async function ReportsPage() {
         ) : (
           <article className="card">
             <h2>Areas</h2>
-            <p>Splitting collection by area or branch is part of Ultra and Premium.</p>
+            <p>This desk plan does not include areas or branches.</p>
           </article>
         )}
       </section>
