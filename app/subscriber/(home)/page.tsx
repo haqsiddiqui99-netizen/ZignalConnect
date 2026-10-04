@@ -4,7 +4,8 @@ import { changePassword } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner, StatusPill } from "@/components/ui";
-import { billCycleLabel, billCycleMonths, cycleAmount } from "@/lib/bill-cycle";
+import { billCycleLabel, nextRenewalDate } from "@/lib/bill-cycle";
+import { invoiceFor } from "@/lib/charges";
 import {
   connectionId,
   dueLabel,
@@ -12,17 +13,16 @@ import {
   formatInr,
   formatSpeed,
   formatStamp,
-  renewalAfterPayment,
   todayISO,
 } from "@/lib/format";
 import { allows } from "@/lib/entitlements";
-import { getSubscriberByUserId, listPayments, listReminders } from "@/lib/queries";
+import { getSubscriberByUserId, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, listPayments, listReminders } from "@/lib/queries";
 
 export const metadata = { title: "My connection" };
 
-function billingReminder(status: string, renewDate: string, plan: string, price: number, cycle: string) {
-  const due = formatInr(cycleAmount(price, cycle));
-  const nextRenewal = formatDate(renewalAfterPayment(renewDate, todayISO(), billCycleMonths(cycle)));
+function billingReminder(status: string, renewDate: string, plan: string, dueAmount: number, cycle: string) {
+  const due = formatInr(dueAmount);
+  const nextRenewal = formatDate(nextRenewalDate(renewDate, todayISO(), cycle));
   if (status === "suspended" || status === "disconnected") {
     const word = status === "disconnected" ? "disconnected" : "paused";
     return {
@@ -76,7 +76,11 @@ export default async function PortalHome({
   if (!person) notFound();
   const payments = listPayments({ customerId: person.id }).slice(0, 3);
   const reminders = listReminders(person.id);
-  const live = billingReminder(person.status, person.renew_date, person.plan_name, person.price, person.bill_cycle);
+  const dueAmount = invoiceFor(person, listCustomerCharges(person.id), {
+    discounts: listCustomerDiscounts(person.id),
+    extraPlans: listCustomerExtraPlans(person.id),
+  }).due;
+  const live = billingReminder(person.status, person.renew_date, person.plan_name, dueAmount, person.bill_cycle);
 
   return (
     <>
@@ -99,7 +103,7 @@ export default async function PortalHome({
           </div>
         </div>
         <div>
-          <p className="hero-price">{formatInr(cycleAmount(person.price, person.bill_cycle))}</p>
+          <p className="hero-price">{formatInr(dueAmount)}</p>
           <p>
             {billCycleLabel(person.bill_cycle).toLowerCase()} · renews {formatDate(person.renew_date)}
           </p>
@@ -150,7 +154,7 @@ export default async function PortalHome({
             </dd>
             <dt>Installed</dt>
             <dd>{formatDate(person.installation_date)}</dd>
-            <dt>Plan</dt>
+            <dt>Internet Plan</dt>
             <dd>{person.plan_description}</dd>
           </dl>
         </article>

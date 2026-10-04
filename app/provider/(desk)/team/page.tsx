@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { limitLabel } from "@/lib/entitlements";
 import { getUsage, listStaff } from "@/lib/queries";
 
-export const metadata = { title: "Team" };
+export const metadata = { title: "My team" };
 
 export default async function TeamPage({
   searchParams,
@@ -21,7 +21,7 @@ export default async function TeamPage({
     <>
       <header className="page-head">
         <div>
-          <h1>Team</h1>
+          <h1>My team</h1>
           <p>
             {usage.staff} of {limitLabel(usage.staffCap)} staff logins on {usage.catalog.label}. Email, password, and
             mobile stay on this page so you can share them.

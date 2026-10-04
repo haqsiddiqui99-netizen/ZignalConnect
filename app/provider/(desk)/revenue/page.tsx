@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FilterForm, FilterLink } from "@/components/filter-form";
 import { requireRole } from "@/lib/auth";
 import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
@@ -81,7 +82,7 @@ export default async function PaymentsPage({
           </p>
         </div>
       </header>
-      <form className="filters" action="/provider/revenue">
+      <FilterForm className="filters labeled" action="/provider/revenue" key={[query.year, query.month, query.from, query.to].join("|")}>
         <label className="field">
           <span>Year</span>
           <select name="year" defaultValue={query.year ?? ""}>
@@ -115,10 +116,10 @@ export default async function PaymentsPage({
         <button className="btn small" type="submit">
           Show revenue
         </button>
-        <Link className="btn small" href="/provider/revenue">
+        <FilterLink className="btn small" href="/provider/revenue">
           Clear
-        </Link>
-      </form>
+        </FilterLink>
+      </FilterForm>
       <p className="fine" style={{ margin: "-6px 0 14px" }}>
         Pick a year, or a year and month. A from and to date overrides the year. Month needs a year.
       </p>
@@ -165,10 +166,10 @@ export default async function PaymentsPage({
                     const nextDir = active && dir === "desc" ? "asc" : "desc";
                     return (
                       <th key={column.key} className={column.num ? "num" : undefined}>
-                        <Link href={keep({ sort: column.key, dir: nextDir })} scroll={false}>
+                        <FilterLink href={keep({ sort: column.key, dir: nextDir })}>
                           {column.label}
                           {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
-                        </Link>
+                        </FilterLink>
                       </th>
                     );
                   })}

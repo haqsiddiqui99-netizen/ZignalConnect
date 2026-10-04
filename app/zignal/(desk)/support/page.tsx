@@ -3,7 +3,7 @@ import { requireOperator } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { formatStamp } from "@/lib/format";
-import { listSupport } from "@/lib/queries";
+import { listSupport, listSupportFollowups, SUPPORT_PRIORITIES, SUPPORT_TOPICS, supportCode } from "@/lib/queries";
 
 export const metadata = { title: "Support" };
 
@@ -15,6 +15,7 @@ export default async function OperatorSupport({
   await requireOperator();
   const query = await searchParams;
   const tickets = listSupport({ all: true });
+  const notes = listSupportFollowups(tickets.map((ticket) => ticket.id));
   const open = tickets.filter((ticket) => ticket.status !== "resolved").length;
 
   return (
@@ -37,10 +38,18 @@ export default async function OperatorSupport({
           {tickets.map((ticket) => (
             <article className="card" key={ticket.id}>
               <p className="fine">
-                {formatStamp(ticket.created_at)} · {ticket.provider_name} · {ticket.sender_name} · {ticket.mobile}
+                {supportCode(ticket.id)} · {priorityLabel(ticket.priority)} · {topicLabel(ticket.topic)} · {formatStamp(ticket.created_at)}
+                {ticket.resolved_at ? ` · Resolved ${formatStamp(ticket.resolved_at)}` : ""} · {ticket.provider_name} · {ticket.sender_name} · {ticket.mobile}
               </p>
               <h2>{ticket.provider_name}</h2>
               <p>{ticket.message}</p>
+              {notes
+                .filter((note) => note.request_id === ticket.id)
+                .map((note) => (
+                  <p key={note.id} className="fine" style={{ marginTop: 8 }}>
+                    Follow-up · {note.sender_name} · {formatStamp(note.created_at)} — {note.message}
+                  </p>
+                ))}
               <form action={replySupport} className="stack" style={{ marginTop: 12 }}>
                 <input type="hidden" name="request_id" value={ticket.id} />
                 <label className="field">
@@ -65,4 +74,12 @@ export default async function OperatorSupport({
       )}
     </>
   );
+}
+
+function priorityLabel(value: string) {
+  return SUPPORT_PRIORITIES.find((item) => item.value === value)?.label ?? "No priority";
+}
+
+function topicLabel(value: string) {
+  return SUPPORT_TOPICS.find((item) => item.value === value)?.label ?? "No topic";
 }

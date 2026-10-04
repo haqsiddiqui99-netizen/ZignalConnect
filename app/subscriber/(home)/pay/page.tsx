@@ -6,9 +6,10 @@ import { PayMethods } from "@/components/pay-methods";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { allows } from "@/lib/entitlements";
-import { billCycleAdvance, billCycleLabel, billCycleMonths, cycleAmount } from "@/lib/bill-cycle";
-import { formatDate, formatInr, formatSpeed, renewalAfterPayment, todayISO } from "@/lib/format";
-import { getSubscriberByUserId } from "@/lib/queries";
+import { billCycleAdvance, billCycleLabel, nextRenewalDate } from "@/lib/bill-cycle";
+import { billTaxNote, chargeSummary, discountSummary, invoiceFor, openCharges } from "@/lib/charges";
+import { formatDate, formatInr, formatSpeed, todayISO } from "@/lib/format";
+import { getSubscriberByUserId, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
 
 export const metadata = { title: "Pay bill" };
 
@@ -21,8 +22,11 @@ export default async function PayPage({
   const { error } = await searchParams;
   const person = getSubscriberByUserId(session.uid);
   if (!person) notFound();
-  const due = cycleAmount(person.price, person.bill_cycle);
-  const nextDate = renewalAfterPayment(person.renew_date, todayISO(), billCycleMonths(person.bill_cycle));
+  const extras = openCharges(listCustomerCharges(person.id));
+  const discounts = listCustomerDiscounts(person.id);
+  const extraPlans = listCustomerExtraPlans(person.id);
+  const due = invoiceFor(person, extras, { discounts, extraPlans }).due;
+  const nextDate = nextRenewalDate(person.renew_date, todayISO(), person.bill_cycle);
 
   return (
     <>
@@ -48,6 +52,14 @@ export default async function PayPage({
           <>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
           Paying this {billCycleLabel(person.bill_cycle).toLowerCase()} bill moves your renewal {billCycleAdvance(person.bill_cycle)} ahead, to {formatDate(nextDate)}. If the line is paused, it comes back on. This records the payment on the provider desk and does not charge a real card or UPI account.
+          {extras.length > 0
+            ? ` This bill adds ${extras.map((charge) => chargeSummary(charge)).join(", ")}. One-time charges are left off later bills.`
+            : ""}
+          {extraPlans.length > 0
+            ? ` Also ${extraPlans.map((plan) => `${plan.plan_name} (${billCycleLabel(plan.bill_cycle).toLowerCase()})`).join(", ")}.`
+            : ""}
+          {billTaxNote(person)}
+          {discounts.length > 0 ? ` Discounts: ${discounts.map((discount) => discountSummary(discount)).join(", ")}.` : ""}
         </p>
         <form action={payBill} className="stack">
           <PayMethods />

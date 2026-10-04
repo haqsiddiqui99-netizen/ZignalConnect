@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { importCustomers } from "@/lib/actions";
-import { CsvPicker } from "@/components/csv-picker";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { limitLabel } from "@/lib/entitlements";
-import { getImportReport, getUsage, listPlans } from "@/lib/queries";
+import { getImportReport, getUsage, listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
 
 export const metadata = { title: "Import" };
 
@@ -18,13 +17,20 @@ export default async function ImportPage({
   const query = await searchParams;
   const usage = getUsage(session.providerId);
   const plans = listPlans(session.providerId);
+  const charges = listChargeCatalogue(session.providerId);
+  const discounts = listDiscountCatalogue(session.providerId);
   const report = getImportReport(session.providerId, query.batch ? Number(query.batch) : undefined);
 
   return (
     <>
+      <p>
+        <Link className="btn small" href="/provider/subscriber">
+          ← All subscribers
+        </Link>
+      </p>
       <header className="page-head">
         <div>
-          <h1>Import customers</h1>
+          <h1>Import Subscribers</h1>
           <p>
             {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}. Overflow allows{" "}
             {limitLabel(usage.overflowCap)}. {usage.overflowSlots} can be added from this file.
@@ -38,28 +44,38 @@ export default async function ImportPage({
       <section className="split">
         <article className="card">
           <h2>Upload</h2>
-          <p className="fine" style={{ marginBottom: 12 }}>
-            Use the template columns. Plan names must already exist. Dates can be YYYY-MM-DD or DD/MM/YYYY. Status can be
-            active, paused, disconnect, collection, or write off. Bill cycle can be monthly, quarterly, bi-annually, or
-            annually. Reminders can be yes or no. Blank columns stay monthly with reminders on. New portal passwords are
-            welcome123.
-          </p>
           {plans.length === 0 ? (
             <p>
               Add at least one plan before importing. <Link href="/provider/plans">Open plans</Link>
             </p>
           ) : (
             <form action={importCustomers} className="stack">
-              <CsvPicker />
               <label className="field">
-                <span>Or paste CSV</span>
-                <textarea name="csv" required placeholder="name,email,mobile,address,city,plan,renewal date" />
+                <span>Spreadsheet file</span>
+                <input name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
               </label>
-              <SubmitButton pendingLabel="Importing…">Import customers</SubmitButton>
+              <SubmitButton pendingLabel="Importing…">Import Subscribers</SubmitButton>
             </form>
           )}
+          <div className="stack" style={{ marginTop: 16 }}>
+            <strong>Use the template tabs.</strong>
+            <ol className="fine info-list">
+              <li>The file has four tabs: Account, Internet plan, One-time charge, and Discount. The same email ties the rows together. Upload it again for an email that is already on the desk to add the plan, charge, and discount lines. A file with only those tabs updates existing subscribers.</li>
+              <li>Internet plan names, one-time charge names, and discount names must already be on the Catalogue page. This file does not create them. Those columns, plus bill cycle, payment reminders, and Internet Plan frequency, are dropdowns in the template. Download the template again after you add a plan, charge, or discount.</li>
+              <li>Put one customer on Account. The first Internet plan row for that email is the main plan. Another row with the same email adds another plan.</li>
+              <li>Leave the plan amount blank to use the catalogue price for that frequency. Leave a charge amount or tax blank to use the catalogue charge.</li>
+              <li>A discount row needs only the email and the catalogue discount name. What it applies to, and the value, come from the catalogue.</li>
+              <li>Dates can be YYYY-MM-DD or DD/MM/YYYY. The renewal date is set from the activation date, or the account installation date, plus that plan's frequency. Leave a charge date blank to use the account installation date.</li>
+              <li>Bill cycle and Internet Plan frequency are Weekly, Bi-weekly, Monthly, Quarterly, Bi-annual, or Annual. Leave the plan frequency blank to follow the bill cycle. Payment reminders are Yes or No.</li>
+              <li>Tax is a percent such as 18. Leave tax blank when it is already included.</li>
+            </ol>
+          </div>
           <p className="fine" style={{ marginTop: 12 }}>
-            Plans this file can use: {plans.map((plan) => plan.name).join(", ") || "none yet"}.
+            Internet plans this file can use: {plans.map((plan) => plan.name).join(", ") || "none yet"}.
+          </p>
+          <p className="fine">
+            One-time charges: {charges.map((charge) => charge.name).join(", ") || "none yet"}. Discounts: {discounts.map((discount) => discount.name).join(", ") || "none yet"}.{" "}
+            <Link href="/provider/plans">Open the catalogue</Link>
           </p>
         </article>
         <article className="card">
@@ -69,7 +85,7 @@ export default async function ImportPage({
           ) : (
             <>
               <p>
-                {report.batch.imported} added, {report.batch.skipped} skipped.
+                {report.batch.imported} added{report.batch.updated ? `, ${report.batch.updated} updated` : ""}, {report.batch.skipped} skipped.
               </p>
               {report.issues.length === 0 ? (
                 <p className="fine">Every row in that file was accepted.</p>

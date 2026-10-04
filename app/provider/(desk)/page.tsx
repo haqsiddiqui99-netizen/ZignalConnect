@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { limitLabel } from "@/lib/entitlements";
 import { formatDate, formatInr, formatSpeed } from "@/lib/format";
 import { dashboard, getUsage } from "@/lib/queries";
+import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
 import { LineId, StatusPill } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
@@ -16,8 +17,10 @@ function greeting() {
 
 export default async function AdminHome() {
   const session = await requireRole("admin");
+  syncDeskOverflow(session.providerId);
   const stats = dashboard(session.providerId);
   const usage = getUsage(session.providerId);
+  const unbilled = carriedOverflow(session.providerId);
   const width = Number.isFinite(usage.customerCap) ? Math.min(100, (usage.customers / usage.customerCap) * 100) : 12;
   return (
     <>
@@ -47,7 +50,11 @@ export default async function AdminHome() {
               : usage.overflowSlots === 0
                 ? `Past the 10% overflow (${limitLabel(usage.overflowCap)}). Upgrade to the next tier to add more. `
                 : usage.overage > 0
-                  ? `${usage.overage} subscribers over the ${limitLabel(usage.customerCap)} cap, at ₹3 each (${formatInr(usage.overageDue)} this month). ${usage.overflowSlots} overflow slots left. `
+                  ? `${usage.overage} subscribers over the ${limitLabel(usage.customerCap)} cap, at ₹3 each (${formatInr(usage.overageDue)} this month). ${usage.overflowSlots} overflow slots left. ${
+                      unbilled > 0
+                        ? `${formatInr(unbilled)} was added after this month's invoice was paid, so it is added to next month's bill together with next month's overflow. `
+                        : ""
+                    }`
                   : `${limitLabel(usage.customerSlots)} customer slots left. A short overflow runs to ${limitLabel(usage.overflowCap)} at ₹3 each. `}
             {usage.trial.active ? `Trial until ${formatDate(usage.trial.ends)}. The plan cap applies the whole time. ` : ""}
             <Link href="/provider/import">Import</Link>
@@ -93,7 +100,7 @@ export default async function AdminHome() {
                 <thead>
                   <tr>
                     <th>Subscriber</th>
-                    <th>Plan</th>
+                    <th>Internet Plan</th>
                     <th>Renewal</th>
                     <th>Status</th>
                   </tr>

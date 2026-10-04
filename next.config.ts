@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["node:sqlite"],
+  serverExternalPackages: ["node:sqlite", "exceljs"],
   async redirects() {
     return [
       { source: "/admin/customers/:path*", destination: "/provider/subscriber/:path*", permanent: false },

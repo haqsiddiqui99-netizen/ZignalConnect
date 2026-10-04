@@ -4,7 +4,7 @@ import { allows } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { collectionReport } from "@/lib/queries";
 
-export const metadata = { title: "Reports" };
+export const metadata = { title: "Report" };
 
 export default async function ReportsPage() {
   const session = await requireRole("admin");
@@ -13,7 +13,7 @@ export default async function ReportsPage() {
       <>
         <header className="page-head">
           <div>
-            <h1>Reports</h1>
+            <h1>Report</h1>
             <p>The collection report is for the owner.</p>
           </div>
         </header>
@@ -28,7 +28,7 @@ export default async function ReportsPage() {
       <>
         <header className="page-head">
           <div>
-            <h1>Reports</h1>
+            <h1>Report</h1>
             <p>Collection totals and a spreadsheet export are part of Pro, Ultra, and Premium.</p>
           </div>
         </header>
@@ -59,14 +59,14 @@ export default async function ReportsPage() {
       </header>
       <section className="split">
         <article className="card">
-          <h2>By plan</h2>
+          <h2>By internet plan</h2>
           {report.byPlan.length === 0 ? (
             <p>No payments this month yet.</p>
           ) : (
             <table>
               <thead>
                 <tr>
-                  <th>Plan</th>
+                  <th>Internet Plan</th>
                   <th className="num">Receipts</th>
                   <th className="num">Amount</th>
                 </tr>

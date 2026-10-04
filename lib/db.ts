@@ -42,6 +42,7 @@ export function getDb() {
   if (customerColumns.size > 0 && !customerColumns.has("reminders")) {
     globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN reminders INTEGER NOT NULL DEFAULT 1");
   }
+  ensureCustomerTaxColumns(globalForDb.lumenDb);
   ensurePlatformAdmin(globalForDb.lumenDb);
   const operatorColumns = columnNames(globalForDb.lumenDb, "platform_admins");
   if (!operatorColumns.has("theme")) {
@@ -55,6 +56,8 @@ export function getDb() {
     );
   `);
   ensureReceiptSchema(globalForDb.lumenDb);
+  ensureComplaintDesk(globalForDb.lumenDb);
+  seedDemoComplaints(globalForDb.lumenDb);
   globalForDb.lumenDb.exec(`
     CREATE TABLE IF NOT EXISTS support_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +70,27 @@ export function getDb() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+  `);
+  const supportColumns = columnNames(globalForDb.lumenDb, "support_requests");
+  if (supportColumns.size > 0 && !supportColumns.has("resolved_at")) {
+    globalForDb.lumenDb.exec("ALTER TABLE support_requests ADD COLUMN resolved_at TEXT NOT NULL DEFAULT ''");
+    globalForDb.lumenDb.exec("UPDATE support_requests SET resolved_at = updated_at WHERE status = 'resolved' AND resolved_at = ''");
+  }
+  if (supportColumns.size > 0 && !supportColumns.has("priority")) {
+    globalForDb.lumenDb.exec("ALTER TABLE support_requests ADD COLUMN priority TEXT NOT NULL DEFAULT ''");
+  }
+  if (supportColumns.size > 0 && !supportColumns.has("topic")) {
+    globalForDb.lumenDb.exec("ALTER TABLE support_requests ADD COLUMN topic TEXT NOT NULL DEFAULT ''");
+  }
+  globalForDb.lumenDb.exec(`
+    CREATE TABLE IF NOT EXISTS support_followups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_support_followups_request ON support_followups(request_id);
   `);
   ensureLineStatuses(globalForDb.lumenDb);
   return globalForDb.lumenDb;
@@ -187,6 +211,7 @@ function migrate(db: DatabaseSync) {
   if (!columnNames(db, "customers").has("reminders")) {
     db.exec("ALTER TABLE customers ADD COLUMN reminders INTEGER NOT NULL DEFAULT 1");
   }
+  ensureCustomerTaxColumns(db);
   ensureLineStatuses(db);
   if (!columnNames(db, "reminders").has("channel")) {
     db.exec("ALTER TABLE reminders ADD COLUMN channel TEXT NOT NULL DEFAULT 'portal'");
@@ -201,10 +226,13 @@ function migrate(db: DatabaseSync) {
       customer_id INTEGER NOT NULL,
       category TEXT NOT NULL,
       details TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('open', 'in_progress', 'resolved')),
+      status TEXT NOT NULL CHECK(status IN ('new', 'assigned', 'pending', 'resolved')),
       provider_note TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      assignee_id INTEGER,
+      resolved_at TEXT NOT NULL DEFAULT '',
+      sla_hours INTEGER NOT NULL DEFAULT 24
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_renewal_once ON reminders(customer_id, stage, cycle_date) WHERE stage != '';
   `);
@@ -326,15 +354,111 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("address")) db.exec("ALTER TABLE providers ADD COLUMN address TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("city")) db.exec("ALTER TABLE providers ADD COLUMN city TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("state")) db.exec("ALTER TABLE providers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("country")) db.exec("ALTER TABLE providers ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pay_method")) db.exec("ALTER TABLE providers ADD COLUMN pay_method TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pay_via")) db.exec("ALTER TABLE providers ADD COLUMN pay_via TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pay_holder")) db.exec("ALTER TABLE providers ADD COLUMN pay_holder TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pay_detail")) db.exec("ALTER TABLE providers ADD COLUMN pay_detail TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("pay_expiry")) db.exec("ALTER TABLE providers ADD COLUMN pay_expiry TEXT NOT NULL DEFAULT ''");
 
   const batchColumns = columnNames(db, "import_batches");
   if (batchColumns.size > 0 && !batchColumns.has("kind")) {
     db.exec("ALTER TABLE import_batches ADD COLUMN kind TEXT NOT NULL DEFAULT 'customers'");
   }
+  if (batchColumns.size > 0 && !batchColumns.has("updated")) {
+    db.exec("ALTER TABLE import_batches ADD COLUMN updated INTEGER NOT NULL DEFAULT 0");
+  }
 
   const paymentColumns = columnNames(db, "payments");
   if (!paymentColumns.has("receipt_snapshot")) {
     db.exec("ALTER TABLE payments ADD COLUMN receipt_snapshot TEXT NOT NULL DEFAULT ''");
+  }
+  if (paymentColumns.size > 0 && !paymentColumns.has("line_items")) {
+    db.exec("ALTER TABLE payments ADD COLUMN line_items TEXT NOT NULL DEFAULT ''");
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_charges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      label TEXT NOT NULL,
+      frequency TEXT NOT NULL CHECK(frequency IN ('once', 'recurring')),
+      amount INTEGER NOT NULL,
+      billed INTEGER NOT NULL DEFAULT 0,
+      tax_included INTEGER NOT NULL DEFAULT 1,
+      tax_percent INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  const chargeColumns = columnNames(db, "customer_charges");
+  if (chargeColumns.size > 0 && !chargeColumns.has("tax_included")) {
+    db.exec("ALTER TABLE customer_charges ADD COLUMN tax_included INTEGER NOT NULL DEFAULT 1");
+  }
+  if (chargeColumns.size > 0 && !chargeColumns.has("tax_percent")) {
+    db.exec("ALTER TABLE customer_charges ADD COLUMN tax_percent INTEGER NOT NULL DEFAULT 0");
+  }
+  if (chargeColumns.size > 0 && !chargeColumns.has("bill_cycle")) {
+    db.exec("ALTER TABLE customer_charges ADD COLUMN bill_cycle TEXT NOT NULL DEFAULT ''");
+  }
+  if (chargeColumns.size > 0 && !chargeColumns.has("activated_on")) {
+    db.exec("ALTER TABLE customer_charges ADD COLUMN activated_on TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_discounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      applies_to TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('amount', 'percent')),
+      value INTEGER NOT NULL
+    );
+  `);
+  const discountColumns = columnNames(db, "customer_discounts");
+  if (discountColumns.size > 0 && !discountColumns.has("frequency")) {
+    db.exec("ALTER TABLE customer_discounts ADD COLUMN frequency TEXT NOT NULL DEFAULT 'recurring'");
+  }
+  if (discountColumns.size > 0 && !discountColumns.has("billed")) {
+    db.exec("ALTER TABLE customer_discounts ADD COLUMN billed INTEGER NOT NULL DEFAULT 0");
+  }
+  if (discountColumns.size > 0 && !discountColumns.has("activated_on")) {
+    db.exec("ALTER TABLE customer_discounts ADD COLUMN activated_on TEXT NOT NULL DEFAULT ''");
+  }
+  if (discountColumns.size > 0 && !discountColumns.has("renews_on")) {
+    db.exec("ALTER TABLE customer_discounts ADD COLUMN renews_on TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_extra_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      plan_id INTEGER NOT NULL,
+      bill_cycle TEXT NOT NULL,
+      tax_included INTEGER NOT NULL DEFAULT 1,
+      tax_percent INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  const extraColumns = columnNames(db, "customer_extra_plans");
+  if (extraColumns.size > 0 && !extraColumns.has("amount")) {
+    db.exec("ALTER TABLE customer_extra_plans ADD COLUMN amount INTEGER NOT NULL DEFAULT 0");
+  }
+  if (extraColumns.size > 0 && !extraColumns.has("activated_on")) {
+    db.exec("ALTER TABLE customer_extra_plans ADD COLUMN activated_on TEXT NOT NULL DEFAULT ''");
+  }
+  if (extraColumns.size > 0 && !extraColumns.has("renews_on")) {
+    db.exec("ALTER TABLE customer_extra_plans ADD COLUMN renews_on TEXT NOT NULL DEFAULT ''");
+  }
+
+  const deskColumns = columnNames(db, "desk_payments");
+  if (deskColumns.size > 0 && !deskColumns.has("unbilled_overage")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN unbilled_overage INTEGER NOT NULL DEFAULT 0");
+  }
+  if (deskColumns.size > 0 && !deskColumns.has("unbilled_carried")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN unbilled_carried INTEGER NOT NULL DEFAULT 0");
+  }
+  if (deskColumns.size > 0 && !deskColumns.has("prior_overage")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN prior_overage INTEGER NOT NULL DEFAULT 0");
+  }
+  if (deskColumns.size > 0 && !deskColumns.has("prior_period")) {
+    db.exec("ALTER TABLE desk_payments ADD COLUMN prior_period TEXT NOT NULL DEFAULT ''");
   }
 
   db.exec(`
@@ -376,6 +500,10 @@ function ensureReceiptSchema(db: DatabaseSync) {
       reference TEXT NOT NULL DEFAULT '',
       paid_at TEXT NOT NULL DEFAULT '',
       issued_at TEXT NOT NULL,
+      unbilled_overage INTEGER NOT NULL DEFAULT 0,
+      unbilled_carried INTEGER NOT NULL DEFAULT 0,
+      prior_overage INTEGER NOT NULL DEFAULT 0,
+      prior_period TEXT NOT NULL DEFAULT '',
       UNIQUE(provider_id, period)
     );
   `);
@@ -451,6 +579,210 @@ function ensurePlatformAdmin(db: DatabaseSync) {
     DEMO_OPERATOR.name,
     nowStamp(),
   );
+}
+
+function ensureComplaintDesk(db: DatabaseSync) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'complaints'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row || row.sql.includes("'new'")) return;
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("DROP TABLE IF EXISTS complaints_next");
+  db.exec(`
+    CREATE TABLE complaints_next (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      details TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('new', 'assigned', 'pending', 'resolved')),
+      provider_note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      assignee_id INTEGER,
+      resolved_at TEXT NOT NULL DEFAULT '',
+      sla_hours INTEGER NOT NULL DEFAULT 24
+    );
+  `);
+  db.exec(`
+    INSERT INTO complaints_next
+      (id, customer_id, category, details, status, provider_note, created_at, updated_at, resolved_at, sla_hours)
+    SELECT id, customer_id, category, details,
+      CASE status WHEN 'open' THEN 'new' WHEN 'in_progress' THEN 'assigned' WHEN 'resolved' THEN 'resolved' ELSE 'new' END,
+      provider_note, created_at, updated_at,
+      CASE WHEN status = 'resolved' THEN updated_at ELSE '' END,
+      CASE category WHEN 'no_internet' THEN 4 WHEN 'drops' THEN 8 WHEN 'slow' THEN 24 ELSE 48 END
+    FROM complaints
+  `);
+  db.exec("DROP TABLE complaints");
+  db.exec("ALTER TABLE complaints_next RENAME TO complaints");
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function hoursAgo(hours: number) {
+  const date = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${d} ${hh}:${mm}`;
+}
+
+function seedDemoComplaints(db: DatabaseSync) {
+  const owner = db.prepare("SELECT id, provider_id FROM users WHERE email = ?").get(DEMO_ADMIN.email) as
+    | { id: number; provider_id: number }
+    | undefined;
+  if (!owner?.provider_id) return;
+  const existing = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM complaints k
+       JOIN customers c ON c.id = k.customer_id
+       JOIN users u ON u.id = c.user_id
+       WHERE u.provider_id = ?`,
+    )
+    .get(owner.provider_id) as { n: number };
+  if (existing.n > 0) return;
+  const customers = db
+    .prepare(
+      `SELECT c.id FROM customers c
+       JOIN users u ON u.id = c.user_id
+       WHERE u.provider_id = ?
+       ORDER BY c.id
+       LIMIT 5`,
+    )
+    .all(owner.provider_id) as { id: number }[];
+  if (customers.length < 4) return;
+  const insert = db.prepare(
+    `INSERT INTO complaints
+      (customer_id, category, details, status, provider_note, created_at, updated_at, assignee_id, resolved_at, sla_hours)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const samples = [
+    {
+      customer_id: customers[0].id,
+      category: "no_internet",
+      details: "The line has been down since this morning. The ONT power light is red and the Wi-Fi light is off.",
+      status: "new",
+      note: "",
+      created: hoursAgo(1),
+      assignee: null,
+      resolved: "",
+      sla: 4,
+    },
+    {
+      customer_id: customers[1].id,
+      category: "drops",
+      details: "The connection drops every few minutes after 7pm. It comes back on its own after a restart.",
+      status: "assigned",
+      note: "Field visit booked for this evening.",
+      created: hoursAgo(6),
+      assignee: owner.id,
+      resolved: "",
+      sla: 8,
+    },
+    {
+      customer_id: customers[2].id,
+      category: "slow",
+      details: "A speed test stays under 10 Mbps on the 300 Mbps plan, on both Wi-Fi and the LAN cable.",
+      status: "pending",
+      note: "Waiting for the subscriber to confirm a time for the line test.",
+      created: hoursAgo(30),
+      assignee: owner.id,
+      resolved: "",
+      sla: 24,
+    },
+    {
+      customer_id: customers[3].id,
+      category: "no_internet",
+      details: "No internet after yesterday's rain. The link light on the router was off.",
+      status: "resolved",
+      note: "Fibre joint was reseated. The line tested at the plan speed.",
+      created: hoursAgo(50),
+      assignee: owner.id,
+      resolved: hoursAgo(47),
+      sla: 4,
+    },
+    {
+      customer_id: customers[Math.min(4, customers.length - 1)].id,
+      category: "other",
+      details: "The router was replaced, but the old Wi-Fi name did not come back and the TV box cannot find the line.",
+      status: "resolved",
+      note: "New router configured and the TV box was paired again.",
+      created: hoursAgo(80),
+      assignee: owner.id,
+      resolved: hoursAgo(20),
+      sla: 48,
+    },
+  ];
+  db.exec("BEGIN");
+  try {
+    for (const sample of samples) {
+      insert.run(
+        sample.customer_id,
+        sample.category,
+        sample.details,
+        sample.status,
+        sample.note,
+        sample.created,
+        sample.resolved || sample.created,
+        sample.assignee,
+        sample.resolved,
+        sample.sla,
+      );
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function ensureCustomerTaxColumns(db: DatabaseSync) {
+  const columns = columnNames(db, "customers");
+  if (columns.size === 0) return;
+  const adds: [string, string][] = [
+    ["plan_frequency", "TEXT NOT NULL DEFAULT 'recurring'"],
+    ["plan_tax_included", "INTEGER NOT NULL DEFAULT 1"],
+    ["plan_tax_percent", "INTEGER NOT NULL DEFAULT 0"],
+    ["plan_billed", "INTEGER NOT NULL DEFAULT 0"],
+    ["invoice_tax_included", "INTEGER NOT NULL DEFAULT 1"],
+    ["invoice_tax_percent", "INTEGER NOT NULL DEFAULT 0"],
+    ["plan_amount", "INTEGER NOT NULL DEFAULT 0"],
+    ["plan_cycle", "TEXT NOT NULL DEFAULT ''"],
+    ["plan_label", "TEXT NOT NULL DEFAULT ''"],
+  ];
+  for (const [name, definition] of adds) {
+    if (!columns.has(name)) db.exec(`ALTER TABLE customers ADD COLUMN ${name} ${definition}`);
+  }
+  if (!columnNames(db, "plans").has("listed")) {
+    db.exec("ALTER TABLE plans ADD COLUMN listed INTEGER NOT NULL DEFAULT 1");
+  }
+  if (columnNames(db, "customer_extra_plans").size > 0 && !columnNames(db, "customer_extra_plans").has("label")) {
+    db.exec("ALTER TABLE customer_extra_plans ADD COLUMN label TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS charge_catalogue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      tax_included INTEGER NOT NULL DEFAULT 1,
+      tax_percent INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (provider_id, name)
+    );
+    CREATE TABLE IF NOT EXISTS discount_catalogue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      applies_to TEXT NOT NULL,
+      frequency TEXT NOT NULL DEFAULT 'recurring',
+      mode TEXT NOT NULL,
+      value INTEGER NOT NULL,
+      UNIQUE (provider_id, name)
+    );
+  `);
 }
 
 function columnNames(db: DatabaseSync, table: string) {

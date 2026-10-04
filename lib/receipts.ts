@@ -22,13 +22,14 @@ type Party = {
   address: string;
   city: string;
   state: string;
+  country?: string;
   phone: string;
   gstin: string;
   email?: string;
 };
 
 function partyLines(party: Party) {
-  const place = [party.city, party.state].filter(Boolean).join(", ");
+  const place = [party.city, party.state, party.country].filter(Boolean).join(", ");
   const lines = [party.address, place, party.phone, party.email ?? ""].filter(Boolean);
   lines.push(party.gstin ? `GSTIN ${party.gstin}` : "GSTIN not registered");
   return lines;
@@ -59,6 +60,7 @@ type IncomeRow = {
   note: string;
   kind: string;
   receipt_snapshot: string;
+  line_items: string;
   user_id: number;
   customer_name: string;
   email: string;
@@ -72,9 +74,50 @@ type IncomeRow = {
   isp_address: string;
   isp_city: string;
   isp_state: string;
+  isp_country: string;
   support_phone: string;
   logo_letter: string;
 };
+
+function storedLines(row: IncomeRow) {
+  if (!row.line_items) return [] as { description: string; amount: number }[];
+  try {
+    const parsed = JSON.parse(row.line_items) as { description?: string; amount?: number }[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((line) => line.description && Number.isInteger(line.amount) && (line.amount as number) !== 0) as {
+      description: string;
+      amount: number;
+    }[];
+  } catch {
+    return [];
+  }
+}
+
+function incomeLines(row: IncomeRow, taxable: number) {
+  const partial = row.kind === "partial" ? "Partial payment toward " : "";
+  const stored = storedLines(row);
+  if (stored.length === 0) {
+    return [
+      {
+        description: `${partial}${row.plan_name}, ${formatDate(row.period_start)} to ${formatDate(row.period_end)}`,
+        sac: "998422",
+        amount: taxable,
+      },
+    ];
+  }
+  const gross = stored.reduce((sum, line) => sum + line.amount, 0);
+  if (gross <= 0) return stored.map((line) => ({ description: line.description, sac: "998422", amount: line.amount }));
+  let used = 0;
+  return stored.map((line, index) => {
+    const amount = !row.gstin
+      ? line.amount
+      : index === stored.length - 1
+        ? taxable - used
+        : Math.round((line.amount * taxable) / gross);
+    used += amount;
+    return { description: line.description, sac: "998422", amount };
+  });
+}
 
 function buildIncome(row: IncomeRow): ReceiptDoc {
   const taxed = Boolean(row.gstin);
@@ -84,10 +127,10 @@ function buildIncome(row: IncomeRow): ReceiptDoc {
     address: row.isp_address,
     city: row.isp_city,
     state: row.isp_state,
+    country: row.isp_country,
     phone: row.support_phone,
     gstin: row.gstin,
   };
-  const partial = row.kind === "partial" ? "Partial payment toward " : "";
   return {
     title: "Payment receipt",
     status: "Paid",
@@ -100,13 +143,7 @@ function buildIncome(row: IncomeRow): ReceiptDoc {
     buyerName: row.customer_name,
     buyerLines: [row.address, row.city, row.mobile, row.email].filter(Boolean),
     place: row.isp_state || row.isp_city || row.city || "Not set",
-    lines: [
-      {
-        description: `${partial}${row.plan_name}, ${formatDate(row.period_start)} to ${formatDate(row.period_end)}`,
-        sac: "998422",
-        amount: money.taxable,
-      },
-    ],
+    lines: incomeLines(row, money.taxable),
     taxable: money.taxable,
     cgst: taxed ? money.cgst : 0,
     sgst: taxed ? money.sgst : 0,
@@ -123,9 +160,9 @@ function buildIncome(row: IncomeRow): ReceiptDoc {
 export function incomeDocument(paymentId: number, viewer: { role: "admin" | "customer"; providerId: number; uid: number }) {
   const row = one<IncomeRow>(
     `SELECT pay.id, pay.amount, pay.method, pay.reference, pay.paid_at, pay.period_start, pay.period_end,
-            pay.note, pay.kind, pay.receipt_snapshot, u.id AS user_id, u.name AS customer_name, u.email,
+            pay.note, pay.kind, pay.receipt_snapshot, pay.line_items, u.id AS user_id, u.name AS customer_name, u.email,
             c.mobile, c.address, c.city, p.name AS plan_name, pr.id AS provider_id, pr.name AS isp_name,
-            pr.gstin, pr.address AS isp_address, pr.city AS isp_city, pr.state AS isp_state,
+            pr.gstin, pr.address AS isp_address, pr.city AS isp_city, pr.state AS isp_state, pr.country AS isp_country,
             pr.support_phone, pr.logo_letter
      FROM payments pay
      JOIN customers c ON c.id = pay.customer_id
@@ -181,12 +218,46 @@ type DeskRow = {
   reference: string;
   paid_at: string;
   issued_at: string;
+  unbilled_overage: number;
+  unbilled_carried: number;
+  prior_overage: number;
+  prior_period: string;
 };
+
+type DeskBillRow = {
+  id: number;
+  paid_at: string;
+  overage_amount: number;
+  unbilled_overage: number;
+  unbilled_carried: number;
+  prior_overage: number;
+  prior_period: string;
+  period: string;
+};
+
+function previousPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function deskPayment(providerId: number, period: string) {
+  return one<DeskBillRow>(
+    `SELECT id, paid_at, overage_amount, unbilled_overage, unbilled_carried, prior_overage, prior_period, period
+     FROM desk_payments WHERE provider_id = ? AND period = ?`,
+    providerId,
+    period,
+  );
+}
 
 function buildDesk(row: DeskRow): ReceiptDoc {
   const paid = Boolean(row.paid_at);
   const month = monthYear(row.period);
   const lines = [{ description: `${row.plan_label} desk for ${month}`, sac: "998315", amount: row.plan_amount }];
+  if (row.prior_overage > 0) {
+    const priorMonth = monthYear(row.prior_period || previousPeriod(row.period));
+    lines.push({ description: `Subscriber overflow for ${priorMonth}`, sac: "998315", amount: row.prior_overage });
+  }
   if (row.overage_amount > 0) {
     lines.push({ description: `Subscriber overflow for ${month}`, sac: "998315", amount: row.overage_amount });
   }
@@ -250,31 +321,33 @@ export function listDeskCharges(providerId?: number) {
   );
 }
 
-export function ensureDeskCharge(providerId: number) {
-  const provider = getProvider(providerId);
-  if (!provider) return;
-  if (trialStatus(provider.trial_ends).active) return;
-  const period = todayISO().slice(0, 7);
-  const existing = one<{ id: number; paid_at: string }>(
-    "SELECT id, paid_at FROM desk_payments WHERE provider_id = ? AND period = ?",
-    providerId,
-    period,
-  );
-  if (existing?.paid_at) return;
+function priorOverflow(providerId: number, period: string) {
+  const previous = deskPayment(providerId, previousPeriod(period));
+  if (!previous?.paid_at || previous.unbilled_carried || previous.unbilled_overage <= 0) return null;
+  return previous;
+}
 
+function writeOpenDeskCharge(
+  provider: NonNullable<ReturnType<typeof getProvider>>,
+  existing: DeskBillRow | undefined,
+  currentOverage: number,
+) {
   const plan = provider.product_plan && isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
   const catalog = CATALOG[plan];
-  const usage = getUsage(providerId);
-  const planAmount = catalog.price;
-  const overageAmount = usage.overageDue;
-  const taxable = planAmount + overageAmount;
+  const period = todayISO().slice(0, 7);
+  const brought = priorOverflow(provider.id, period);
+  const priorOverage = existing && existing.prior_overage > 0 ? existing.prior_overage : (brought?.unbilled_overage ?? 0);
+  const priorPeriod = existing?.prior_period ? existing.prior_period : (brought?.period ?? "");
+  const taxable = catalog.price + currentOverage + priorOverage;
   const seller = getPlatformProfile();
   const charged = seller.gstin ? gstOnTop(taxable) : { tax: 0, total: taxable };
   const mode = seller.gstin ? gstMode(seller.state, provider.state) : "none";
   const values = [
     catalog.label,
-    planAmount,
-    overageAmount,
+    catalog.price,
+    currentOverage,
+    priorOverage,
+    priorPeriod,
     taxable,
     charged.tax,
     charged.total,
@@ -293,52 +366,78 @@ export function ensureDeskCharge(providerId: number) {
     provider.state,
     provider.support_phone,
   ];
+  let saved = true;
   if (existing) {
     run(
       `UPDATE desk_payments SET
-        plan_label = ?, plan_amount = ?, overage_amount = ?, taxable = ?, tax = ?, total = ?, gst_mode = ?,
+        plan_label = ?, plan_amount = ?, overage_amount = ?, prior_overage = ?, prior_period = ?,
+        taxable = ?, tax = ?, total = ?, gst_mode = ?,
         seller_name = ?, seller_gstin = ?, seller_address = ?, seller_city = ?, seller_state = ?, seller_phone = ?, seller_email = ?,
         buyer_name = ?, buyer_gstin = ?, buyer_address = ?, buyer_city = ?, buyer_state = ?, buyer_phone = ?
        WHERE id = ? AND paid_at = ''`,
       ...values,
       existing.id,
     );
+  } else {
+    try {
+      run(
+        `INSERT INTO desk_payments (
+          provider_id, period, plan_label, plan_amount, overage_amount, prior_overage, prior_period,
+          taxable, tax, total, gst_mode,
+          seller_name, seller_gstin, seller_address, seller_city, seller_state, seller_phone, seller_email,
+          buyer_name, buyer_gstin, buyer_address, buyer_city, buyer_state, buyer_phone, issued_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        provider.id,
+        period,
+        ...values,
+        nowStamp(),
+      );
+    } catch {
+      saved = false;
+    }
+  }
+  if (saved && brought && priorOverage > 0 && !(existing && existing.prior_overage > 0)) {
+    run("UPDATE desk_payments SET unbilled_carried = 1 WHERE id = ? AND unbilled_carried = 0", brought.id);
+  }
+}
+
+export function syncDeskOverflow(providerId: number) {
+  const provider = getProvider(providerId);
+  if (!provider || trialStatus(provider.trial_ends).active) return;
+  const period = todayISO().slice(0, 7);
+  const row = deskPayment(providerId, period);
+  if (!row) return;
+  const usage = getUsage(providerId);
+  if (row.paid_at) {
+    if (row.unbilled_carried) return;
+    const unbilled = Math.max(0, usage.overageDue - row.overage_amount);
+    if (unbilled === row.unbilled_overage) return;
+    run(
+      "UPDATE desk_payments SET unbilled_overage = ? WHERE id = ? AND paid_at != '' AND unbilled_carried = 0",
+      unbilled,
+      row.id,
+    );
     return;
   }
-  try {
-  run(
-    `INSERT INTO desk_payments (
-      provider_id, period, plan_label, plan_amount, overage_amount, taxable, tax, total, gst_mode,
-      seller_name, seller_gstin, seller_address, seller_city, seller_state, seller_phone, seller_email,
-      buyer_name, buyer_gstin, buyer_address, buyer_city, buyer_state, buyer_phone, issued_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    providerId,
-    period,
-    catalog.label,
-    planAmount,
-    overageAmount,
-    taxable,
-    charged.tax,
-    charged.total,
-    mode,
-    seller.legal_name,
-    seller.gstin,
-    seller.address,
-    seller.city,
-    seller.state,
-    seller.phone,
-    seller.email,
-    provider.name,
-    provider.gstin,
-    provider.address,
-    provider.city,
-    provider.state,
-    provider.support_phone,
-    nowStamp(),
-  );
-  } catch {
-    /* another request issued this month first */
+  writeOpenDeskCharge(provider, row, usage.overageDue);
+}
+
+export function carriedOverflow(providerId: number) {
+  const row = deskPayment(providerId, todayISO().slice(0, 7));
+  if (!row?.paid_at || row.unbilled_carried) return 0;
+  return row.unbilled_overage;
+}
+
+export function ensureDeskCharge(providerId: number) {
+  const provider = getProvider(providerId);
+  if (!provider || trialStatus(provider.trial_ends).active) return;
+  const period = todayISO().slice(0, 7);
+  const existing = deskPayment(providerId, period);
+  if (existing?.paid_at) {
+    syncDeskOverflow(providerId);
+    return;
   }
+  writeOpenDeskCharge(provider, existing, getUsage(providerId).overageDue);
 }
 
 export function ensureDeskCharges(providerId?: number) {

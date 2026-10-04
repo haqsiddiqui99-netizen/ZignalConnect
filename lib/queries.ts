@@ -25,6 +25,7 @@ export type Subscriber = {
   area: string;
   status: LineStatus;
   plan_id: number;
+  plan_label: string;
   plan_name: string;
   speed_mbps: number;
   price: number;
@@ -34,7 +35,15 @@ export type Subscriber = {
   installation_date: string;
   notes: string;
   bill_cycle: BillCycle;
+  plan_amount: number;
+  plan_cycle: string;
   reminders: number;
+  plan_frequency: "once" | "recurring";
+  plan_tax_included: number;
+  plan_tax_percent: number;
+  plan_billed: number;
+  invoice_tax_included: number;
+  invoice_tax_percent: number;
 };
 
 export type Payment = {
@@ -68,10 +77,14 @@ export type Complaint = {
   customer_name: string;
   category: string;
   details: string;
-  status: "open" | "in_progress" | "resolved";
+  status: "new" | "assigned" | "pending" | "resolved";
   provider_note: string;
   created_at: string;
   updated_at: string;
+  assignee_id: number | null;
+  assignee_name: string;
+  resolved_at: string;
+  sla_hours: number;
 };
 
 export type StaffMember = {
@@ -96,18 +109,90 @@ export type ProviderRecord = {
   address: string;
   city: string;
   state: string;
+  country: string;
+  pay_method: string;
+  pay_via: string;
+  pay_holder: string;
+  pay_detail: string;
+  pay_expiry: string;
 };
 
 const subscriberSelect = `
   SELECT
     c.id, c.user_id, u.name, u.email, c.mobile, c.address, c.city, c.area, c.status,
-    c.plan_id, p.name AS plan_name, p.speed_mbps, p.price, p.data_cap,
+    c.plan_id, c.plan_label, CASE WHEN c.plan_label <> '' THEN c.plan_label ELSE p.name END AS plan_name, p.speed_mbps, p.price, p.data_cap,
     p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
-    c.bill_cycle, c.reminders
+    c.bill_cycle, c.plan_amount, c.plan_cycle, c.reminders, c.plan_frequency, c.plan_tax_included, c.plan_tax_percent,
+    c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent
   FROM customers c
   JOIN users u ON u.id = c.user_id
   JOIN plans p ON p.id = c.plan_id
 `;
+
+export type CustomerCharge = {
+  id: number;
+  customer_id: number;
+  kind: string;
+  label: string;
+  frequency: "once" | "recurring";
+  bill_cycle: string;
+  amount: number;
+  billed: number;
+  tax_included: number;
+  tax_percent: number;
+  activated_on: string;
+};
+
+export function listCustomerCharges(customerId: number) {
+  return many<CustomerCharge>(
+    "SELECT id, customer_id, kind, label, frequency, bill_cycle, amount, billed, tax_included, tax_percent, activated_on FROM customer_charges WHERE customer_id = ? ORDER BY id",
+    customerId,
+  );
+}
+
+export type CustomerDiscount = {
+  id: number;
+  customer_id: number;
+  name: string;
+  applies_to: string;
+  mode: "amount" | "percent";
+  frequency: "once" | "recurring";
+  billed: number;
+  value: number;
+};
+
+export function listCustomerDiscounts(customerId: number) {
+  return many<CustomerDiscount>(
+    "SELECT id, customer_id, name, applies_to, mode, frequency, billed, value FROM customer_discounts WHERE customer_id = ? ORDER BY id",
+    customerId,
+  );
+}
+
+export type CustomerExtraPlan = {
+  id: number;
+  customer_id: number;
+  plan_id: number;
+  label: string;
+  plan_name: string;
+  price: number;
+  bill_cycle: string;
+  amount: number;
+  tax_included: number;
+  tax_percent: number;
+  activated_on: string;
+  renews_on: string;
+};
+
+export function listCustomerExtraPlans(customerId: number) {
+  return many<CustomerExtraPlan>(
+    `SELECT e.id, e.customer_id, e.plan_id, e.label, CASE WHEN e.label <> '' THEN e.label ELSE p.name END AS plan_name, p.price, e.bill_cycle, e.amount, e.tax_included, e.tax_percent, e.activated_on, e.renews_on
+     FROM customer_extra_plans e
+     JOIN plans p ON p.id = e.plan_id
+     WHERE e.customer_id = ?
+     ORDER BY e.id`,
+    customerId,
+  );
+}
 
 export function getProvider(providerId: number) {
   return one<ProviderRecord>("SELECT * FROM providers WHERE id = ?", providerId);
@@ -156,17 +241,65 @@ export function getUsage(providerId: number) {
   };
 }
 
+export type ChargeCatalogueItem = {
+  id: number;
+  name: string;
+  kind: string;
+  amount: number;
+  tax_included: number;
+  tax_percent: number;
+};
+
+export type DiscountCatalogueItem = {
+  id: number;
+  name: string;
+  applies_to: string;
+  frequency: string;
+  mode: string;
+  value: number;
+};
+
+export function listChargeCatalogue(providerId: number) {
+  return many<ChargeCatalogueItem>(
+    "SELECT id, name, kind, amount, tax_included, tax_percent FROM charge_catalogue WHERE provider_id = ? ORDER BY name",
+    providerId,
+  );
+}
+
+export function listDiscountCatalogue(providerId: number) {
+  return many<DiscountCatalogueItem>(
+    "SELECT id, name, applies_to, frequency, mode, value FROM discount_catalogue WHERE provider_id = ? ORDER BY name",
+    providerId,
+  );
+}
+
 export function listPlans(providerId: number) {
   return many<Plan>(
     `SELECT p.*, (SELECT COUNT(*) FROM customers c WHERE c.plan_id = p.id) AS subscribers
      FROM plans p
-     WHERE p.provider_id = ?
+     WHERE p.provider_id = ? AND p.listed = 1
      ORDER BY p.speed_mbps`,
     providerId,
   );
 }
 
-export function listSubscribers(providerId: number, filters: { q?: string; status?: string; billing?: string }) {
+export function subscriberStatusCounts(providerId: number) {
+  const rows = many<{ status: string; n: number }>(
+    `SELECT c.status, COUNT(*) AS n
+     FROM customers c
+     JOIN users u ON u.id = c.user_id
+     WHERE u.provider_id = ?
+     GROUP BY c.status`,
+    providerId,
+  );
+  const counts = { active: 0, suspended: 0, disconnected: 0, collection: 0, write_off: 0 };
+  for (const row of rows) {
+    if (isLineStatus(row.status)) counts[row.status] = row.n;
+  }
+  return counts;
+}
+
+export function listSubscribers(providerId: number, filters: { q?: string; status?: string; billing?: string; page?: number }) {
   const today = todayISO();
   const where = ["u.provider_id = ?"];
   const params: Array<string | number> = [providerId];
@@ -189,10 +322,19 @@ export function listSubscribers(providerId: number, filters: { q?: string; statu
     params.push(today, addDays(today, 7));
   }
 
-  return many<Subscriber>(
-    `${subscriberSelect} WHERE ${where.join(" AND ")} ORDER BY c.renew_date ASC, u.name ASC`,
+  const joined = `FROM customers c JOIN users u ON u.id = c.user_id JOIN plans p ON p.id = c.plan_id WHERE ${where.join(" AND ")}`;
+  const total = one<{ n: number }>(`SELECT COUNT(*) AS n ${joined}`, ...params)?.n ?? 0;
+  const pageSize = 50;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const requested = filters.page && Number.isInteger(filters.page) && filters.page > 0 ? filters.page : 1;
+  const page = Math.min(pages, requested);
+  const rows = many<Subscriber>(
+    `${subscriberSelect} WHERE ${where.join(" AND ")} ORDER BY c.renew_date ASC, u.name ASC LIMIT ? OFFSET ?`,
     ...params,
+    pageSize,
+    (page - 1) * pageSize,
   );
+  return { rows, total, page, pages };
 }
 
 export function getSubscriber(id: number, providerId: number) {
@@ -291,22 +433,24 @@ export function listComplaints(scope: { providerId: number } | { customerId: num
   const where = "providerId" in scope ? "u.provider_id = ?" : "k.customer_id = ?";
   const param = "providerId" in scope ? scope.providerId : scope.customerId;
   return many<Complaint>(
-    `SELECT k.*, u.name AS customer_name
+    `SELECT k.*, u.name AS customer_name, COALESCE(a.name, '') AS assignee_name
      FROM complaints k
      JOIN customers c ON c.id = k.customer_id
      JOIN users u ON u.id = c.user_id
+     LEFT JOIN users a ON a.id = k.assignee_id
      WHERE ${where}
-     ORDER BY CASE k.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, k.id DESC`,
+     ORDER BY CASE k.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 WHEN 'pending' THEN 2 ELSE 3 END, k.created_at DESC`,
     param,
   );
 }
 
 export function getComplaint(id: number, providerId: number) {
   return one<Complaint>(
-    `SELECT k.*, u.name AS customer_name
+    `SELECT k.*, u.name AS customer_name, COALESCE(a.name, '') AS assignee_name
      FROM complaints k
      JOIN customers c ON c.id = k.customer_id
      JOIN users u ON u.id = c.user_id
+     LEFT JOIN users a ON a.id = k.assignee_id
      WHERE k.id = ? AND u.provider_id = ?`,
     id,
     providerId,
@@ -367,22 +511,22 @@ export function dashboard(providerId: number) {
     renewals,
     recent: listPayments({ providerId }).slice(0, 6),
     subscribers: one<{ n: number }>(`SELECT COUNT(*) AS n FROM customers c WHERE ${scope}`, providerId)?.n ?? 0,
-    plans: one<{ n: number }>("SELECT COUNT(*) AS n FROM plans WHERE provider_id = ?", providerId)?.n ?? 0,
+    plans: one<{ n: number }>("SELECT COUNT(*) AS n FROM plans WHERE provider_id = ? AND listed = 1", providerId)?.n ?? 0,
   };
 }
 
 export type ImportIssue = { line: number; message: string };
 
-export function getImportReport(providerId: number, batchId?: number, kind: "customers" | "plans" = "customers") {
+export function getImportReport(providerId: number, batchId?: number, kind: "customers" | "plans" | "catalogue" | "payments" = "customers") {
   const batch = batchId
-    ? one<{ id: number; imported: number; skipped: number; created_at: string }>(
-        "SELECT id, imported, skipped, created_at FROM import_batches WHERE id = ? AND provider_id = ? AND kind = ?",
+    ? one<{ id: number; imported: number; updated: number; skipped: number; created_at: string }>(
+        "SELECT id, imported, updated, skipped, created_at FROM import_batches WHERE id = ? AND provider_id = ? AND kind = ?",
         batchId,
         providerId,
         kind,
       )
-    : one<{ id: number; imported: number; skipped: number; created_at: string }>(
-        "SELECT id, imported, skipped, created_at FROM import_batches WHERE provider_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+    : one<{ id: number; imported: number; updated: number; skipped: number; created_at: string }>(
+        "SELECT id, imported, updated, skipped, created_at FROM import_batches WHERE provider_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
         providerId,
         kind,
       );
@@ -480,7 +624,28 @@ export type SupportRequest = {
   reply: string;
   created_at: string;
   updated_at: string;
+  resolved_at: string;
+  priority: string;
+  topic: string;
 };
+
+export const SUPPORT_PRIORITIES = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+] as const;
+
+export const SUPPORT_TOPICS = [
+  { value: "billing", label: "Billing" },
+  { value: "bug", label: "A bug" },
+  { value: "subscriber", label: "Subscriber" },
+  { value: "connection", label: "Connection" },
+  { value: "other", label: "Other" },
+] as const;
+
+export function supportCode(id: number) {
+  return `SUP-${1000 + id}`;
+}
 
 function recentMonthStarts(count: number) {
   const { start } = monthBounds();
@@ -614,5 +779,26 @@ export function listSupport(scope: { providerId: number } | { all: true }) {
      ${where}
      ORDER BY CASE s.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, s.id DESC`,
     ...params,
+  );
+}
+
+export type SupportFollowup = {
+  id: number;
+  request_id: number;
+  message: string;
+  created_at: string;
+  sender_name: string;
+};
+
+export function listSupportFollowups(requestIds: number[]) {
+  if (requestIds.length === 0) return [];
+  const marks = requestIds.map(() => "?").join(", ");
+  return many<SupportFollowup>(
+    `SELECT f.id, f.request_id, f.message, f.created_at, u.name AS sender_name
+     FROM support_followups f
+     JOIN users u ON u.id = f.user_id
+     WHERE f.request_id IN (${marks})
+     ORDER BY f.id`,
+    ...requestIds,
   );
 }

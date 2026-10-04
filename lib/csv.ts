@@ -1,8 +1,8 @@
 import { isDate } from "@/lib/format";
 import { lineStatusFromImport, type LineStatus } from "@/lib/line-status";
 
-export const CSV_TEMPLATE = `name,email,mobile,address,city,plan,renewal date,installation date,status,notes,area,bill cycle,reminders
-Arjun Mehta,arjun.mehta@mail.com,9820091104,"14, Pali Hill Road",Mumbai,Home 300,2026-11-01,2026-02-01,active,ONT in the living room,West,monthly,yes
+export const CSV_TEMPLATE = `name,email,mobile,address,city,Internet Plan name,Internet Plan Frequency,Internet Plan amount,Internet Plan Tax,installation date,renewal date,notes,area,bill cycle,payment reminders,router amount,router tax,installation amount,installation tax,service amount,service tax,other charge amount,other charge tax,Tax on invoice(%),discount name,discount applies,discount mode (amount or %age),discount value
+Arjun Mehta,arjun.mehta@mail.com,9820091104,"14, Pali Hill Road",Mumbai,Home 300,monthly,,,2026-02-01,2026-11-01,ONT in the living room,West,monthly,yes,,,,,,,,,,,,,
 `;
 
 export const PLAN_CSV_TEMPLATE = `name,speed,price,data,description
@@ -24,6 +24,28 @@ export type ImportRow = {
   area: string;
   billCycle: string;
   reminders: string;
+  planCycle: string;
+  planAmount: string;
+  routerAmount: string;
+  routerFrequency: string;
+  routerTax: string;
+  installationAmount: string;
+  installationFrequency: string;
+  installationTax: string;
+  serviceAmount: string;
+  serviceFrequency: string;
+  serviceTax: string;
+  otherCharge: string;
+  otherAmount: string;
+  otherFrequency: string;
+  otherTax: string;
+  planFrequency: string;
+  planTax: string;
+  invoiceTax: string;
+  discountName: string;
+  discountApplies: string;
+  discountMode: string;
+  discountValue: string;
 };
 
 const HEADER_MAP: Record<string, keyof Omit<ImportRow, "line">> = {
@@ -35,6 +57,9 @@ const HEADER_MAP: Record<string, keyof Omit<ImportRow, "line">> = {
   city: "city",
   plan: "plan",
   "plan name": "plan",
+  "internet plan": "plan",
+  "internet plan name": "plan",
+  "inernet plan name": "plan",
   "renewal date": "renewDate",
   "renew date": "renewDate",
   renew_date: "renewDate",
@@ -51,6 +76,55 @@ const HEADER_MAP: Record<string, keyof Omit<ImportRow, "line">> = {
   cycle: "billCycle",
   reminders: "reminders",
   reminder: "reminders",
+  "payment reminders": "reminders",
+  "payment reminder": "reminders",
+  "router amount": "routerAmount",
+  router_amount: "routerAmount",
+  "router frequency": "routerFrequency",
+  router_frequency: "routerFrequency",
+  "router tax": "routerTax",
+  router_tax: "routerTax",
+  "installation amount": "installationAmount",
+  installation_amount: "installationAmount",
+  "installation frequency": "installationFrequency",
+  installation_frequency: "installationFrequency",
+  "installation tax": "installationTax",
+  installation_tax: "installationTax",
+  "service amount": "serviceAmount",
+  service_amount: "serviceAmount",
+  "service frequency": "serviceFrequency",
+  service_frequency: "serviceFrequency",
+  "service tax": "serviceTax",
+  service_tax: "serviceTax",
+  "other charge": "otherCharge",
+  other_charge: "otherCharge",
+  "other amount": "otherAmount",
+  other_amount: "otherAmount",
+  "other charge amount": "otherAmount",
+  "other frequency": "otherFrequency",
+  other_frequency: "otherFrequency",
+  "other tax": "otherTax",
+  other_tax: "otherTax",
+  "other charge tax": "otherTax",
+  "plan frequency": "planFrequency",
+  plan_frequency: "planFrequency",
+  "internet plan frequency": "planCycle",
+  "plan amount": "planAmount",
+  "internet plan amount": "planAmount",
+  "plan tax": "planTax",
+  plan_tax: "planTax",
+  "internet plan tax": "planTax",
+  "invoice tax": "invoiceTax",
+  invoice_tax: "invoiceTax",
+  "tax on invoice": "invoiceTax",
+  "discount name": "discountName",
+  discount_name: "discountName",
+  "discount applies": "discountApplies",
+  discount_applies: "discountApplies",
+  "discount mode": "discountMode",
+  discount_mode: "discountMode",
+  "discount value": "discountValue",
+  discount_value: "discountValue",
 };
 
 function parseTable(text: string) {
@@ -172,7 +246,7 @@ export function parsePlanCsv(text: string): { rows: PlanImportRow[]; error?: str
 export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: string } {
   const table = parseTable(text);
   if (table.length < 2) return { rows: [], error: "The file needs a header row and at least one customer." };
-  const headers = table[0].map((header) => header.toLowerCase());
+  const headers = table[0].map((header) => header.toLowerCase().replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim());
   const index = new Map<keyof Omit<ImportRow, "line">, number>();
   headers.forEach((header, position) => {
     const key = HEADER_MAP[header];
@@ -180,7 +254,7 @@ export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: str
   });
   for (const required of ["name", "email", "mobile", "address", "city", "plan", "renewDate"] as const) {
     if (!index.has(required)) {
-      return { rows: [], error: "The header must include name, email, mobile, address, city, plan, and renewal date." };
+      return { rows: [], error: "The header must include name, email, mobile, address, city, Internet Plan name, and renewal date." };
     }
   }
 
@@ -205,6 +279,28 @@ export function parseCustomerCsv(text: string): { rows: ImportRow[]; error?: str
       area: pick("area"),
       billCycle: pick("billCycle"),
       reminders: pick("reminders"),
+      planCycle: pick("planCycle"),
+      planAmount: pick("planAmount"),
+      routerAmount: pick("routerAmount"),
+      routerFrequency: pick("routerFrequency"),
+      routerTax: pick("routerTax"),
+      installationAmount: pick("installationAmount"),
+      installationFrequency: pick("installationFrequency"),
+      installationTax: pick("installationTax"),
+      serviceAmount: pick("serviceAmount"),
+      serviceFrequency: pick("serviceFrequency"),
+      serviceTax: pick("serviceTax"),
+      otherCharge: pick("otherCharge"),
+      otherAmount: pick("otherAmount"),
+      otherFrequency: pick("otherFrequency"),
+      otherTax: pick("otherTax"),
+      planFrequency: pick("planFrequency"),
+      planTax: pick("planTax"),
+      invoiceTax: pick("invoiceTax"),
+      discountName: pick("discountName"),
+      discountApplies: pick("discountApplies"),
+      discountMode: pick("discountMode"),
+      discountValue: pick("discountValue"),
     };
   });
   return { rows };

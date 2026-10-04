@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getSession } from "@/lib/auth";
+import { RichSelects } from "@/components/rich-selects";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +15,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const theme = session?.theme === "dark" ? "dark" : "light";
   return (
     <html lang="en" data-theme={theme}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <RichSelects />
+      </body>
     </html>
   );
 }

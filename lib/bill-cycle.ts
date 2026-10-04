@@ -1,13 +1,24 @@
+import { addDays, addMonths } from "@/lib/format";
+
 export const BILL_CYCLES = [
-  { value: "monthly", label: "Monthly", months: 1, advance: "one month" },
-  { value: "quarterly", label: "Quarterly", months: 3, advance: "three months" },
-  { value: "biannual", label: "Bi-annually", months: 6, advance: "six months" },
-  { value: "annual", label: "Annually", months: 12, advance: "one year" },
+  { value: "weekly", label: "Weekly", months: 0, days: 7, advance: "one week" },
+  { value: "biweekly", label: "Bi-weekly", months: 0, days: 14, advance: "two weeks" },
+  { value: "monthly", label: "Monthly", months: 1, days: 0, advance: "one month" },
+  { value: "quarterly", label: "Quarterly", months: 3, days: 0, advance: "three months" },
+  { value: "biannual", label: "Bi-annual", months: 6, days: 0, advance: "six months" },
+  { value: "annual", label: "Annual", months: 12, days: 0, advance: "one year" },
 ] as const;
 
 export type BillCycle = (typeof BILL_CYCLES)[number]["value"];
 
 const IMPORT_CYCLE: Record<string, BillCycle> = {
+  weekly: "weekly",
+  week: "weekly",
+  "bi-weekly": "biweekly",
+  biweekly: "biweekly",
+  "bi weekly": "biweekly",
+  fortnight: "biweekly",
+  fortnightly: "biweekly",
   monthly: "monthly",
   month: "monthly",
   quarterly: "quarterly",
@@ -29,7 +40,7 @@ export function isBillCycle(value: string): value is BillCycle {
 }
 
 export function billCycleOf(value: string): (typeof BILL_CYCLES)[number] {
-  return BILL_CYCLES.find((item) => item.value === value) ?? BILL_CYCLES[0];
+  return BILL_CYCLES.find((item) => item.value === value) ?? BILL_CYCLES[2];
 }
 
 export function billCycleLabel(value: string) {
@@ -45,7 +56,23 @@ export function billCycleAdvance(value: string) {
 }
 
 export function cycleAmount(monthlyPrice: number, value: string) {
-  return monthlyPrice * billCycleMonths(value);
+  const cycle = billCycleOf(value);
+  if (cycle.value === "weekly") return Math.round(monthlyPrice / 4);
+  if (cycle.value === "biweekly") return Math.round(monthlyPrice / 2);
+  return monthlyPrice * cycle.months;
+}
+
+export function renewalAfterInstallation(installation: string, cycle: string) {
+  const item = billCycleOf(cycle);
+  if (item.days > 0) return addDays(installation, item.days);
+  return addMonths(installation, item.months || 1);
+}
+
+export function nextRenewalDate(currentRenew: string, today: string, cycle: string) {
+  const item = billCycleOf(cycle);
+  const base = currentRenew > today ? currentRenew : today;
+  if (item.days > 0) return addDays(base, item.days);
+  return addMonths(base, item.months);
 }
 
 export function billCycleFromImport(value: string): BillCycle | "invalid" {

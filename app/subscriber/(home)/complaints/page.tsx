@@ -2,6 +2,7 @@ import { raiseComplaint } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
+import { complaintCode } from "@/lib/complaints";
 import { formatStamp } from "@/lib/format";
 import { getSubscriberByUserId, listComplaints } from "@/lib/queries";
 import { notFound } from "next/navigation";
@@ -16,9 +17,12 @@ const CATEGORIES = [
 ];
 
 const STATUS: Record<string, string> = {
-  open: "Open",
-  in_progress: "Being looked at",
+  new: "New",
+  assigned: "Assigned",
+  pending: "Pending",
   resolved: "Resolved",
+  open: "New",
+  in_progress: "Assigned",
 };
 
 export default async function PortalComplaints({
@@ -72,7 +76,10 @@ export default async function PortalComplaints({
             <div className="list">
               {tickets.map((ticket) => (
                 <div key={ticket.id}>
-                  <strong>{CATEGORIES.find((item) => item.id === ticket.category)?.label ?? ticket.category}</strong>
+                  <strong>{complaintCode(ticket.id)}</strong>
+                  <div>
+                    {CATEGORIES.find((item) => item.id === ticket.category)?.label ?? ticket.category}
+                  </div>
                   <div className="fine">
                     {STATUS[ticket.status] ?? ticket.status} · {formatStamp(ticket.created_at)}
                   </div>

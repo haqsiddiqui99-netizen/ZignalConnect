@@ -1,8 +1,9 @@
-import { changeDeskPassword, saveDeskSettings } from "@/lib/actions";
+import { changeDeskPassword, saveDeskPayment, saveDeskSettings } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
+import { SavedPaymentFields } from "@/components/saved-payment";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
-import { deskMobile } from "@/lib/queries";
+import { deskMobile, getProvider, type ProviderRecord } from "@/lib/queries";
 
 export const metadata = { title: "Settings" };
 
@@ -14,13 +15,14 @@ export default async function DeskSettings({
   const session = await requireRole("admin");
   const query = await searchParams;
   const mobile = deskMobile(session.uid);
+  const provider = getProvider(session.providerId);
 
   return (
     <>
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Your name, mobile, theme, and password for this desk.</p>
+          <p>Your name, mobile, theme, password, and payment preference for this desk.</p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
@@ -69,6 +71,41 @@ export default async function DeskSettings({
           </form>
         </article>
       </section>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Payment saved details</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          Preferred way to pay Zignal for this desk. Saving a method does not charge a card, UPI, or bank account.
+        </p>
+        {session.isOwner ? (
+          <form action={saveDeskPayment} className="stack">
+            <SavedPaymentFields
+              method={provider?.pay_method ?? ""}
+              via={provider?.pay_via ?? ""}
+              holder={provider?.pay_holder ?? ""}
+              detail={provider?.pay_detail ?? ""}
+              expiry={provider?.pay_expiry ?? ""}
+            />
+            <SubmitButton className="btn small">Save payment details</SubmitButton>
+          </form>
+        ) : (
+          <p>{paymentSummary(provider)}</p>
+        )}
+      </article>
     </>
   );
+}
+
+function paymentSummary(provider: ProviderRecord | undefined) {
+  if (!provider?.pay_method) return "No payment method is saved yet. The owner of this desk can add one.";
+  const via = provider.pay_method === "auto_pay" ? provider.pay_via : provider.pay_method;
+  const kind =
+    via === "credit_card" ? "Credit card" : via === "debit_card" ? "Debit card" : via === "upi" ? "UPI" : via === "net_banking" ? "Net banking" : "Payment method";
+  const lead = provider.pay_method === "auto_pay" ? `Auto-pay · ${kind}` : kind;
+  if (via === "credit_card" || via === "debit_card") {
+    const tail = [provider.pay_holder, provider.pay_detail ? `•••• ${provider.pay_detail}` : "", provider.pay_expiry].filter(Boolean).join(" · ");
+    return tail ? `${lead} · ${tail}` : lead;
+  }
+  if (via === "upi") return provider.pay_detail ? `${lead} · ${provider.pay_detail}` : lead;
+  const bank = [provider.pay_detail, provider.pay_holder].filter(Boolean).join(" · ");
+  return bank ? `${lead} · ${bank}` : lead;
 }
