@@ -5,9 +5,32 @@ import { getDb } from "@/lib/db";
 import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { BrandMark } from "@/components/brand-mark";
+import { SITE_LINKS } from "@/components/site-shell";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { redirect } from "next/navigation";
+
+const SITE_URL = "https://www.zignalconnect.com";
+
+const SITE_DATA = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "Zignal Connect",
+      url: `${SITE_URL}/`,
+      logo: `${SITE_URL}/icon.svg`,
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: "Zignal Connect",
+      url: `${SITE_URL}/`,
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+  ],
+};
 
 export default async function LoginPage({
   searchParams,
@@ -22,12 +45,22 @@ export default async function LoginPage({
   return (
     <main className="login">
       <section className="login-brand">
-        <div className="brand-lockup">
-          <BrandMark />
-          <div>
-            <strong>ZIGNAL</strong>
-            <span>Connect</span>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_DATA) }} />
+        <div>
+          <div className="brand-lockup">
+            <BrandMark />
+            <div>
+              <strong>ZIGNAL</strong>
+              <span>Connect</span>
+            </div>
           </div>
+          <nav className="login-links" aria-label="Zignal Connect">
+            {SITE_LINKS.map((link) => (
+              <Link key={link.href} href={link.href}>
+                {link.label}
+              </Link>
+            ))}
+          </nav>
         </div>
         <div>
           <p className="eyebrow">Provider desk</p>
