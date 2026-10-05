@@ -7,12 +7,13 @@ import {
   PREMIUM_PLANS,
   limitLabel,
   overflowLimit,
-  planFamily,
   type ProductPlan,
 } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 
-function familyFor(count: number) {
+type Family = "pro" | "ultra" | "premium";
+
+function familyFor(count: number): Family {
   if (count <= CATALOG.pro.customers) return "pro";
   if (count <= CATALOG.ultra.customers) return "ultra";
   return "premium";
@@ -22,13 +23,13 @@ function premiumPlan(count: number): ProductPlan {
   return PREMIUM_PLANS.find((plan) => count <= CATALOG[plan].customers) ?? "premium_30000";
 }
 
-function pointsFor(family: "pro" | "ultra" | "premium") {
+function pointsFor(family: Family) {
   return PLAN_POINTS.filter((point) => point.plans.includes(family)).map((point) => point.label);
 }
 
 export function SignupPlans() {
   const [base, setBase] = useState("");
-  const [chosen, setChosen] = useState("");
+  const [chosen, setChosen] = useState<Family | "">("");
   const count = Number(base);
   const known = base.trim() !== "" && Number.isInteger(count) && count >= 1;
   const fit = known ? familyFor(count) : "";
