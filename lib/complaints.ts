@@ -1,8 +1,9 @@
 export const COMPLAINT_STATUSES = [
-  { value: "new", label: "New" },
-  { value: "assigned", label: "Assigned" },
-  { value: "pending", label: "Pending" },
-  { value: "resolved", label: "Resolved" },
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In-progress" },
+  { value: "closed", label: "Closed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "duplicate", label: "Duplicate" },
 ] as const;
 
 export type ComplaintStatus = (typeof COMPLAINT_STATUSES)[number]["value"];
@@ -19,7 +20,11 @@ export function isComplaintStatus(value: string): value is ComplaintStatus {
 }
 
 export function complaintStatusLabel(value: string) {
-  return COMPLAINT_STATUSES.find((item) => item.value === value)?.label ?? value;
+  return COMPLAINT_STATUSES.find((item) => item.value === value)?.label ?? "Open";
+}
+
+export function complaintIsFinished(status: string) {
+  return status === "closed" || status === "cancelled" || status === "duplicate";
 }
 
 export function complaintCode(id: number) {

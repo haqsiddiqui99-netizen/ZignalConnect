@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/zignal", label: "Providers", exact: true },
   { href: "/zignal/revenue", label: "Revenue" },
-  { href: "/zignal/support", label: "Support" },
+  { href: "/zignal/support", label: "My Support" },
   { href: "/zignal/settings", label: "Settings" },
 ];
 

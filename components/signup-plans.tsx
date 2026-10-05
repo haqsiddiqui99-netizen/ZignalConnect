@@ -9,7 +9,8 @@ import {
   overflowLimit,
   type ProductPlan,
 } from "@/lib/entitlements";
-import { formatInr } from "@/lib/format";
+import { BillTermChoice, TermPrice } from "@/components/bill-term-choice";
+import type { BillTerm } from "@/lib/entitlements";
 
 type Family = "pro" | "ultra" | "premium";
 
@@ -30,6 +31,7 @@ function pointsFor(family: Family) {
 export function SignupPlans() {
   const [base, setBase] = useState("");
   const [chosen, setChosen] = useState<Family | "">("");
+  const [term, setTerm] = useState<BillTerm>("monthly");
   const count = Number(base);
   const known = base.trim() !== "" && Number.isInteger(count) && count >= 1;
   const fit = known ? familyFor(count) : "";
@@ -66,6 +68,7 @@ export function SignupPlans() {
           />
         </label>
       </div>
+      <BillTermChoice value={term} onChange={setTerm} />
       <fieldset className="plan-pick signup-plans">
         <legend className="fine">Plan for that book</legend>
         <label className="card plan-option">
@@ -78,24 +81,33 @@ export function SignupPlans() {
             required
             onChange={() => setChosen("pro")}
           />
-          <p className="fine">
-            <span className="when-idle">{proBlocked ? "Too small" : "Choose"}</span>
-            <span className="when-picked">Selected</span>
-          </p>
+          <div className="plan-card-top">
+            <p className="fine">
+              <span className="when-idle">{proBlocked ? "Too small" : "Choose"}</span>
+              <span className="when-picked">Selected</span>
+            </p>
+            <span className="trial-tab">{CATALOG.pro.trialDays}-day trial</span>
+          </div>
           <h2>{CATALOG.pro.label}</h2>
-          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-            {formatInr(CATALOG.pro.price)}
-          </p>
-          <p className="fine">per month</p>
-          <p style={{ margin: "10px 0" }}>{CATALOG.pro.blurb}</p>
+          <TermPrice monthly={CATALOG.pro.price} term={term} />
+          <ul className="plan-stats">
+            <li>
+              <b>{limitLabel(CATALOG.pro.customers)}</b>
+              <span>customers</span>
+            </li>
+            <li>
+              <b>{limitLabel(CATALOG.pro.reminders)}</b>
+              <span>reminders</span>
+            </li>
+            <li>
+              <b>{limitLabel(CATALOG.pro.staff)}</b>
+              <span>staff</span>
+            </li>
+          </ul>
           <p className="fine">
-            {limitLabel(CATALOG.pro.customers)} customers · {limitLabel(CATALOG.pro.reminders)} reminders ·{" "}
-            {limitLabel(CATALOG.pro.staff)} staff · {CATALOG.pro.trialDays}-day trial
+            Overflow to {limitLabel(overflowLimit("pro"))} at ₹3 each. Extra staff ₹10 a month. Extra messages ₹0.50.
           </p>
-          <p className="fine">
-            Overflow to {limitLabel(overflowLimit("pro"))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
-          </p>
-          <ul className="fine" style={{ paddingLeft: 18 }}>
+          <ul className="plan-points">
             {pointsFor("pro").map((point) => (
               <li key={point}>{point}</li>
             ))}
@@ -111,24 +123,33 @@ export function SignupPlans() {
             required
             onChange={() => setChosen("ultra")}
           />
-          <p className="fine">
-            <span className="when-idle">{ultraBlocked ? "Too small" : "Choose"}</span>
-            <span className="when-picked">Selected</span>
-          </p>
+          <div className="plan-card-top">
+            <p className="fine">
+              <span className="when-idle">{ultraBlocked ? "Too small" : "Choose"}</span>
+              <span className="when-picked">Selected</span>
+            </p>
+            <span className="trial-tab">{CATALOG.ultra.trialDays}-day trial</span>
+          </div>
           <h2>{CATALOG.ultra.label}</h2>
-          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-            {formatInr(CATALOG.ultra.price)}
-          </p>
-          <p className="fine">per month</p>
-          <p style={{ margin: "10px 0" }}>{CATALOG.ultra.blurb}</p>
+          <TermPrice monthly={CATALOG.ultra.price} term={term} />
+          <ul className="plan-stats">
+            <li>
+              <b>{limitLabel(CATALOG.ultra.customers)}</b>
+              <span>customers</span>
+            </li>
+            <li>
+              <b>{limitLabel(CATALOG.ultra.reminders)}</b>
+              <span>reminders</span>
+            </li>
+            <li>
+              <b>{limitLabel(CATALOG.ultra.staff)}</b>
+              <span>staff</span>
+            </li>
+          </ul>
           <p className="fine">
-            {limitLabel(CATALOG.ultra.customers)} customers · {limitLabel(CATALOG.ultra.reminders)} reminders ·{" "}
-            {limitLabel(CATALOG.ultra.staff)} staff · {CATALOG.ultra.trialDays}-day trial
+            Overflow to {limitLabel(overflowLimit("ultra"))} at ₹3 each. Extra staff ₹10 a month. Extra messages ₹0.50.
           </p>
-          <p className="fine">
-            Overflow to {limitLabel(overflowLimit("ultra"))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
-          </p>
-          <ul className="fine" style={{ paddingLeft: 18 }}>
+          <ul className="plan-points">
             {pointsFor("ultra").map((point) => (
               <li key={point}>{point}</li>
             ))}
@@ -143,25 +164,40 @@ export function SignupPlans() {
             required
             onChange={() => setChosen("premium")}
           />
-          <p className="fine">
-            <span className="when-idle">Choose</span>
-            <span className="when-picked">Selected</span>
-          </p>
+          <div className="plan-card-top">
+            <p className="fine">
+              <span className="when-idle">Choose</span>
+              <span className="when-picked">Selected</span>
+            </p>
+            <span className="trial-tab">{CATALOG.premium_3000.trialDays}-day trial</span>
+          </div>
           <h2>Premium</h2>
-          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-            {known && selected === "premium" ? formatInr(premiumTier.price) : `from ${formatInr(CATALOG.premium_3000.price)}`}
-          </p>
-          <p className="fine">per month, set from the subscriber base</p>
-          <p style={{ margin: "10px 0" }}>
-            20 staff for every 10,000 subscribers. Extra staff are ₹10 each per month. The rate is worked out from the subscriber base.
-          </p>
+          {known && selected === "premium" ? (
+            <TermPrice monthly={premiumTier.price} term={term} />
+          ) : (
+            <TermPrice monthly={CATALOG.premium_3000.price} term={term} from />
+          )}
+          <ul className="plan-stats">
+            <li>
+              <b>{limitLabel(premiumTier.customers)}</b>
+              <span>customers</span>
+            </li>
+            <li>
+              <b>{limitLabel(premiumTier.staff)}</b>
+              <span>staff</span>
+            </li>
+            <li>
+              <b>₹3</b>
+              <span>overflow each</span>
+            </li>
+          </ul>
           <p className="fine">
             {known && count > CATALOG.premium_30000.customers
-              ? `A book above ${limitLabel(CATALOG.premium_30000.customers)} stays on Premium.`
-              : `Up to ${limitLabel(premiumTier.customers)} customers · ${limitLabel(premiumTier.staff)} staff · ${premiumTier.trialDays}-day trial`}
+              ? `A book above ${limitLabel(CATALOG.premium_30000.customers)} stays on Premium. `
+              : "The rate follows the subscriber base. "}
+            Extra staff ₹10 a month. Extra messages ₹0.50.
           </p>
-          <p className="fine">Overflow at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.</p>
-          <ul className="fine" style={{ paddingLeft: 18 }}>
+          <ul className="plan-points">
             {pointsFor("premium").map((point) => (
               <li key={point}>{point}</li>
             ))}

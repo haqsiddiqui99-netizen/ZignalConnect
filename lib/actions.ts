@@ -10,14 +10,18 @@ import { getDb, many, one, run } from "@/lib/db";
 import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import {
   allows,
+  BILL_TERMS,
   CATALOG,
   customerLimit,
+  isBillTerm,
   isProductPlan,
   limitLabel,
   minimumPlan,
   planFamily,
   planFitsBase,
   quotePremium,
+  termQuote,
+  type BillTerm,
   type ProductPlan,
 } from "@/lib/entitlements";
 import {
@@ -30,7 +34,7 @@ import {
   todayISO,
 } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { complaintCode, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
+import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import {
   billCycleFromImport,
@@ -50,6 +54,7 @@ import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBi
 import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
 import { getPlatformProfile, getSubscriber, getSubscriberByUserId, getUsage, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
+import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
   const query = params ? `?${new URLSearchParams(params).toString()}` : "";
@@ -1044,6 +1049,7 @@ export async function registerProvider(
   const country = readText(formData, "country");
   const pincode = readText(formData, "pincode").replace(/\s+/g, "");
   const plan = readText(formData, "product_plan");
+  const term: BillTerm = isBillTerm(readText(formData, "billing_term")) ? (readText(formData, "billing_term") as BillTerm) : "monthly";
   const base = Number(readText(formData, "subscriber_base"));
   if (isp.length < 2) return { error: "Enter your ISP name." };
   if (name.length < 2) return { error: "Enter your name." };
@@ -1084,8 +1090,8 @@ export async function registerProvider(
   try {
     const provider = run(
       `INSERT INTO providers
-        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode, billing_term)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       isp,
       plan,
       phone,
@@ -1099,6 +1105,7 @@ export async function registerProvider(
       state,
       country,
       pincode,
+      term,
     );
     const user = run(
       "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",
@@ -1116,9 +1123,10 @@ export async function registerProvider(
   }
   await setSession(userId);
   const chosen = CATALOG[plan];
+  const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
   redirect(
     `/provider/upgrade?notice=${encodeURIComponent(
-      `${chosen.label} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.`,
+      `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.`,
     )}`,
   );
 }
@@ -2212,6 +2220,7 @@ export async function openUpgradeCheckout(formData: FormData) {
   const session = await requireRole("admin");
   if (!session.isOwner) go("/provider/upgrade", { error: "Only the desk owner can change the plan." });
   const requested = readText(formData, "product_plan");
+  const term: BillTerm = isBillTerm(readText(formData, "billing_term")) ? (readText(formData, "billing_term") as BillTerm) : "monthly";
   const usage = getUsage(session.providerId);
   let nextPlan: ProductPlan;
   let subscriberBase = usage.subscriberBase;
@@ -2232,19 +2241,22 @@ export async function openUpgradeCheckout(formData: FormData) {
       error: `${CATALOG[nextPlan].label} holds ${limitLabel(nextCustomers)} customers. This desk has ${usage.customers}.`,
     });
   }
-  if (nextPlan === usage.plan && subscriberBase === usage.subscriberBase) {
+  const currentTerm: BillTerm = usage.provider?.billing_term && isBillTerm(usage.provider.billing_term) ? usage.provider.billing_term : "monthly";
+  if (nextPlan === usage.plan && subscriberBase === usage.subscriberBase && term === currentTerm) {
     go("/provider/upgrade", { error: "This desk is already on that plan." });
   }
   const provider = usage.provider;
   const platform = getPlatformProfile();
-  const amount = CATALOG[nextPlan].price;
+  const quote = termQuote(CATALOG[nextPlan].price, term);
+  const amount = quote.due;
   const taxed = platform.gstin ? gstOnTop(amount) : { tax: 0, total: amount };
   const mode = platform.gstin ? gstMode(platform.state, provider?.state ?? "") : "none";
-  const label = requested === "premium" ? "Premium" : CATALOG[nextPlan].label;
+  const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
+  const label = `${requested === "premium" ? "Premium" : CATALOG[nextPlan].label} · ${termLabel}`;
   const inserted = run(
     `INSERT INTO upgrade_orders (
-      provider_id, product_plan, subscriber_base, plan_label, plan_amount, tax, total, gst_mode, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      provider_id, product_plan, subscriber_base, plan_label, plan_amount, tax, total, gst_mode, status, created_at, billing_term
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
     session.providerId,
     nextPlan,
     subscriberBase,
@@ -2254,6 +2266,7 @@ export async function openUpgradeCheckout(formData: FormData) {
     taxed.total,
     mode,
     nowStamp(),
+    term,
   );
   redirect(`/provider/upgrade/pay/${Number(inserted.lastInsertRowid)}`);
 }
@@ -2313,7 +2326,7 @@ export async function raiseComplaint(formData: FormData) {
   const saved = run(
     `INSERT INTO complaints
       (customer_id, category, details, status, provider_note, created_at, updated_at, sla_hours)
-     VALUES (?, ?, ?, 'new', '', ?, ?, ?)`,
+     VALUES (?, ?, ?, 'open', '', ?, ?, ?)`,
     current.id,
     category,
     details,
@@ -2341,7 +2354,7 @@ export async function raiseChatComplaint(kind: string) {
 
   const open = one<{ id: number }>(
     `SELECT id FROM complaints
-     WHERE customer_id = ? AND category = ? AND details = ? AND status != 'resolved'
+     WHERE customer_id = ? AND category = ? AND details = ? AND status NOT IN ('closed', 'cancelled', 'duplicate')
      ORDER BY id DESC LIMIT 1`,
     current.id,
     ticket.category,
@@ -2355,7 +2368,7 @@ export async function raiseChatComplaint(kind: string) {
   const saved = run(
     `INSERT INTO complaints
       (customer_id, category, details, status, provider_note, created_at, updated_at, sla_hours)
-     VALUES (?, ?, ?, 'new', '', ?, ?, ?)`,
+     VALUES (?, ?, ?, 'open', '', ?, ?, ?)`,
     current.id,
     ticket.category,
     ticket.details,
@@ -2377,7 +2390,7 @@ export async function updateComplaint(formData: FormData) {
     go("/provider/complaints", { error: "Choose a status." });
   }
   if (note.length > 400) go("/provider/complaints", { error: "Keep the note under 400 characters." });
-  if ((status === "assigned" || status === "pending") && !assigneeId) {
+  if (status === "in_progress" && !assigneeId) {
     go("/provider/complaints", { error: "Choose who will work on this complaint." });
   }
   if (assigneeId) {
@@ -2399,7 +2412,7 @@ export async function updateComplaint(formData: FormData) {
   );
   if (!ticket) go("/provider/complaints", { error: "That complaint was not found." });
   const now = nowStamp();
-  const resolvedAt = status === "resolved" ? ticket.resolved_at || now : "";
+  const resolvedAt = complaintIsFinished(status) ? ticket.resolved_at || now : "";
   run(
     "UPDATE complaints SET status = ?, provider_note = ?, assignee_id = ?, resolved_at = ?, updated_at = ? WHERE id = ?",
     status,
@@ -2508,7 +2521,6 @@ export async function recordDeskPayment(formData: FormData) {
   go(receipt);
 }
 
-const SUPPORT_STATUSES = ["open", "in_progress", "resolved"] as const;
 
 export async function raiseSupport(formData: FormData) {
   const session = await requireRole("admin");
@@ -2524,7 +2536,7 @@ export async function raiseSupport(formData: FormData) {
   const stamp = nowStamp();
   run(
     `INSERT INTO support_requests (provider_id, user_id, mobile, message, status, reply, created_at, updated_at, priority, topic)
-     VALUES (?, ?, ?, ?, 'open', '', ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'new', '', ?, ?, ?, ?)`,
     session.providerId,
     session.uid,
     mobile,
@@ -2558,8 +2570,8 @@ export async function addSupportFollowup(formData: FormData) {
     message,
     stamp,
   );
-  if (ticket.status === "resolved") {
-    run("UPDATE support_requests SET status = 'open', resolved_at = '', updated_at = ? WHERE id = ?", stamp, id);
+  if (supportIsFinished(ticket.status)) {
+    run("UPDATE support_requests SET status = 'new', resolved_at = '', updated_at = ? WHERE id = ?", stamp, id);
   } else {
     run("UPDATE support_requests SET updated_at = ? WHERE id = ?", stamp, id);
   }
@@ -2572,14 +2584,14 @@ export async function replySupport(formData: FormData) {
   const id = Number(formData.get("request_id"));
   const status = readText(formData, "status");
   const reply = readText(formData, "reply");
-  if (!SUPPORT_STATUSES.includes(status as (typeof SUPPORT_STATUSES)[number])) {
-    go("/zignal/support", { error: "Choose a status." });
+  if (!SUPPORT_STATUSES.some((item) => item.value === status)) {
+    go("/zignal/support", { error: "Choose a status.", ticket: String(id) });
   }
-  if (reply.length > 800) go("/zignal/support", { error: "Keep the reply under 800 characters." });
+  if (reply.length > 800) go("/zignal/support", { error: "Keep the reply under 800 characters.", ticket: String(id) });
   const ticket = one<{ id: number; resolved_at: string }>("SELECT id, resolved_at FROM support_requests WHERE id = ?", id);
   if (!ticket) go("/zignal/support", { error: "That message was not found." });
   const stamp = nowStamp();
-  const resolvedAt = status === "resolved" ? ticket.resolved_at || stamp : "";
+  const resolvedAt = supportIsFinished(status) ? ticket.resolved_at || stamp : "";
   run(
     "UPDATE support_requests SET status = ?, reply = ?, updated_at = ?, resolved_at = ? WHERE id = ?",
     status,

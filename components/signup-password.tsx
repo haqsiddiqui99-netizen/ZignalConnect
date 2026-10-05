@@ -38,8 +38,12 @@ export function SignupPassword() {
             required
             minLength={8}
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (!event.target.value) setVisible(false);
+            }}
           />
+          {password.length > 0 ? (
           <button
             type="button"
             className="password-eye"
@@ -60,6 +64,7 @@ export function SignupPassword() {
               </svg>
             )}
           </button>
+          ) : null}
         </div>
         <p className="fine password-status">
           {lengthWord} : <strong className={password.length >= 8 ? "strong" : "weak"}>{lengthStatus}</strong>, Strength:{" "}

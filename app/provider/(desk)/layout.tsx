@@ -43,6 +43,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         chargeNames={charges.map((charge) => charge.name).join(", ")}
         discounts={discounts.length}
         discountNames={discounts.map((discount) => discount.name).join(", ")}
+        planLabel={CATALOG[session.productPlan].label}
+        planPrice={CATALOG[session.productPlan].price}
+        planCustomers={CATALOG[session.productPlan].customers}
+        planStaff={CATALOG[session.productPlan].staff}
+        planReminders={CATALOG[session.productPlan].reminders}
       />
     </div>
   );

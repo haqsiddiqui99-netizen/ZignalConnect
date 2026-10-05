@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { formatInr } from "@/lib/format";
 
 type Reply = { question: string; text: string; href: string; label: string };
 type Message = { from: "bot" | "you"; text: string; href?: string; label?: string };
@@ -12,8 +13,32 @@ function catalogueLine(count: number, singular: string, plural: string, names: s
   return `This desk has ${count} ${noun}${names ? `: ${names}` : ""}.`;
 }
 
-function answersFor(catalogue: { plans: number; planNames: string; charges: number; chargeNames: string; discounts: number; discountNames: string }): Reply[] {
+function answersFor(catalogue: {
+  plans: number;
+  planNames: string;
+  charges: number;
+  chargeNames: string;
+  discounts: number;
+  discountNames: string;
+  planLabel: string;
+  planPrice: number;
+  planCustomers: number;
+  planStaff: number;
+  planReminders: number;
+}): Reply[] {
   return [
+    {
+      question: "Raise a ticket",
+      text: "Open Zignal Support, leave a mobile number, and say what you need. Zignal Connect replies on that page, and you can add a follow-up on the same ticket.",
+      href: "/provider/support",
+      label: "Open Zignal Support",
+    },
+    {
+      question: "What plan is this desk on?",
+      text: `This desk is on ${catalogue.planLabel}. It holds up to ${catalogue.planCustomers.toLocaleString("en-IN")} subscribers, with ${catalogue.planStaff} staff logins and ${catalogue.planReminders.toLocaleString("en-IN")} reminders a month. The monthly rate is ${formatInr(catalogue.planPrice)}.`,
+      href: "/provider/upgrade",
+      label: "Compare plans",
+    },
     {
       question: "Add a subscriber",
       text: "Add a subscriber from the Subscribers page. You need a name, portal email, 10-digit mobile, 6-digit PIN, address, and a plan. That creates the line and the portal login. The starting password is welcome123.",
@@ -59,7 +84,7 @@ function answersFor(catalogue: { plans: number; planNames: string; charges: numb
   ];
 }
 
-const GREETING: Message = { from: "bot", text: "Choose a question. Zignal AI is coming soon." };
+const GREETING: Message = { from: "bot", text: "Ask about this desk, or raise a ticket. Zignal AI is coming soon." };
 
 export function DeskChat({
   plans,
@@ -68,6 +93,11 @@ export function DeskChat({
   chargeNames,
   discounts,
   discountNames,
+  planLabel,
+  planPrice,
+  planCustomers,
+  planStaff,
+  planReminders,
 }: {
   plans: number;
   planNames: string;
@@ -75,8 +105,25 @@ export function DeskChat({
   chargeNames: string;
   discounts: number;
   discountNames: string;
+  planLabel: string;
+  planPrice: number;
+  planCustomers: number;
+  planStaff: number;
+  planReminders: number;
 }) {
-  const answers = answersFor({ plans, planNames, charges, chargeNames, discounts, discountNames });
+  const answers = answersFor({
+    plans,
+    planNames,
+    charges,
+    chargeNames,
+    discounts,
+    discountNames,
+    planLabel,
+    planPrice,
+    planCustomers,
+    planStaff,
+    planReminders,
+  });
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([GREETING]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -102,7 +149,7 @@ export function DeskChat({
   return (
     <div className="desk-chat no-print">
       {open ? (
-        <section className="desk-chat-panel" aria-label="Zignal chat">
+        <section className="desk-chat-panel" aria-label="Instant Support">
           <header className="desk-chat-head">
             <span className="desk-chat-avatar" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -111,7 +158,7 @@ export function DeskChat({
               </svg>
             </span>
             <div>
-              <strong>Zignal</strong>
+              <strong>Instant Support</strong>
               <span>Zignal AI coming soon</span>
             </div>
             <button type="button" className="desk-chat-close" onClick={shut} aria-label="Close chat">
@@ -149,7 +196,7 @@ export function DeskChat({
         type="button"
         className="desk-chat-btn"
         aria-expanded={open}
-        aria-label={open ? "Close Zignal chat" : "Open Zignal chat"}
+        aria-label={open ? "Close Instant Support" : "Open Instant Support"}
         onClick={() => (open ? shut() : setOpen(true))}
       >
         <svg viewBox="0 0 32 32" aria-hidden="true">

@@ -1,9 +1,9 @@
-import { openUpgradeCheckout, saveBrand } from "@/lib/actions";
-import Link from "next/link";
+import { saveBrand } from "@/lib/actions";
+import { DeskPlanCards } from "@/components/desk-plan-cards";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { CATALOG, PLAN_POINTS, allows, limitLabel, overflowLimit, planFamily, type ProductPlan } from "@/lib/entitlements";
+import { allows, isBillTerm, limitLabel, planFamily } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
 import { IspPincodeFields } from "@/components/service-address";
 import { getUsage } from "@/lib/queries";
@@ -52,78 +52,15 @@ export default async function BillingPage({
       </header>
       <Banner error={query.error} notice={query.notice} />
       <p className="fine" style={{ marginBottom: 12 }}>
-        Upgrade opens a payment page for that plan. The monthly fee, the ₹3 subscriber overflow, extra staff at ₹10
-        each, and extra messages at ₹0.50 are prices on the plan. The payment gateway is the only piece still to connect.
+        Upgrade opens a payment page for that plan. The desk fee follows the term you pick. The ₹3 subscriber overflow, extra staff at ₹10
+        each, and extra messages at ₹0.50 stay monthly. The payment gateway is the only piece still to connect.
       </p>
-      <section className="plan-pick">
-        {(["pro", "ultra"] as ProductPlan[]).map((plan) => {
-          const item = CATALOG[plan];
-          const current = plan === usage.plan;
-          const tooSmall = usage.customers > item.customers;
-          return (
-            <article className={current ? "card current" : "card"} key={plan}>
-              <p className="fine">{current ? "Current plan" : "Switch to"}</p>
-              <h2>{item.label}</h2>
-              <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-                {formatInr(item.price)}
-              </p>
-              <p className="fine">per month</p>
-              <p style={{ margin: "10px 0" }}>{item.blurb}</p>
-              <p className="fine">
-                {limitLabel(item.customers)} customers · {limitLabel(item.reminders)} reminders · {limitLabel(item.staff)}{" "}
-                staff · {item.trialDays}-day trial
-              </p>
-              <p className="fine">
-                Overflow to {limitLabel(overflowLimit(plan))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
-              </p>
-              <ul className="fine" style={{ paddingLeft: 18 }}>
-                {PLAN_POINTS.filter((feature) => feature.plans.includes(planFamily(plan))).map((feature) => (
-                  <li key={feature.label}>{feature.label}</li>
-                ))}
-              </ul>
-              {current || !session.isOwner ? null : tooSmall ? (
-                <p className="fine">This desk is larger than {item.label}.</p>
-              ) : (
-                <form action={openUpgradeCheckout}>
-                  <input type="hidden" name="product_plan" value={plan} />
-                  <SubmitButton className="btn small" pendingLabel="Opening payment…">
-                    Upgrade
-                  </SubmitButton>
-                </form>
-              )}
-              {!current && !session.isOwner ? <p className="fine">Only the owner can switch plans.</p> : null}
-            </article>
-          );
-        })}
-        <article className={planFamily(usage.plan) === "premium" ? "card current" : "card"}>
-          <p className="fine">{planFamily(usage.plan) === "premium" ? "Current plan" : "Upgrade to"}</p>
-          <h2>Premium</h2>
-          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-            from {formatInr(CATALOG.premium_3000.price)}
-          </p>
-          <p className="fine">per month, set from the subscriber base</p>
-          <p style={{ margin: "10px 0" }}>
-            20 staff for every 10,000 subscribers. Extra staff are ₹10 each per month. The rate is worked out when you upgrade.
-          </p>
-          <p className="fine">
-            Up to {limitLabel(CATALOG.premium_30000.customers)} customers · 20 staff per 10,000 subscribers ·{" "}
-            {CATALOG.premium_3000.trialDays}-day trial
-          </p>
-          <p className="fine">Overflow at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.</p>
-          <ul className="fine" style={{ paddingLeft: 18 }}>
-            {PLAN_POINTS.filter((feature) => feature.plans.includes("premium")).map((feature) => (
-              <li key={feature.label}>{feature.label}</li>
-            ))}
-          </ul>
-          {session.isOwner ? (
-            <Link className="btn small" href="/provider/upgrade/premium">
-              Upgrade
-            </Link>
-          ) : (
-            <p className="fine">Only the owner can switch plans.</p>
-          )}
-        </article>
-      </section>
+      <DeskPlanCards
+        currentPlan={usage.plan}
+        currentTerm={usage.provider?.billing_term && isBillTerm(usage.provider.billing_term) ? usage.provider.billing_term : "monthly"}
+        customers={usage.customers}
+        isOwner={session.isOwner}
+      />
       <article className="card" style={{ marginTop: 14 }}>
         <h2>ISP details</h2>
         <p className="fine" style={{ marginBottom: 12 }}>

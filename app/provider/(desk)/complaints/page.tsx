@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { ComplaintTable } from "@/components/complaint-table";
 import { FilterForm, FilterLink } from "@/components/filter-form";
 import { Banner } from "@/components/ui";
-import { COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, complaintCode, isComplaintStatus, slaLabel, type ComplaintStatus } from "@/lib/complaints";
+import { COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, complaintCode, complaintIsFinished, isComplaintStatus, slaLabel, type ComplaintStatus } from "@/lib/complaints";
 import { listComplaints, listStaff } from "@/lib/queries";
 
 export const metadata = { title: "Complaint" };
@@ -30,7 +30,7 @@ export default async function AdminComplaints({
     sla_hours: ticket.sla_hours,
   }));
   const staff = listStaff(session.providerId).map((person) => ({ id: person.id, name: person.name }));
-  const open = tickets.filter((ticket) => ticket.status !== "resolved");
+  const open = tickets.filter((ticket) => !complaintIsFinished(ticket.status));
   const breached = open.filter((ticket) => slaLabel(ticket.created_at, ticket.resolved_at, ticket.sla_hours).breached).length;
   const statusCounts = Object.fromEntries(COMPLAINT_STATUSES.map((item) => [item.value, 0])) as Record<ComplaintStatus, number>;
   const byAssignee = new Map<string, Record<ComplaintStatus, number>>();
@@ -38,7 +38,7 @@ export default async function AdminComplaints({
     if (!isComplaintStatus(ticket.status)) continue;
     statusCounts[ticket.status] += 1;
     const assignee = ticket.assignee_name || "Unassigned";
-    const row = byAssignee.get(assignee) ?? { new: 0, assigned: 0, pending: 0, resolved: 0 };
+    const row = byAssignee.get(assignee) ?? { open: 0, in_progress: 0, closed: 0, cancelled: 0, duplicate: 0 };
     row[ticket.status] += 1;
     byAssignee.set(assignee, row);
   }
@@ -106,7 +106,7 @@ export default async function AdminComplaints({
                 </thead>
                 <tbody>
                   {assigneeRows.map(([name, row]) => {
-                    const total = row.new + row.assigned + row.pending + row.resolved;
+                    const total = COMPLAINT_STATUSES.reduce((sum, item) => sum + row[item.value], 0);
                     return (
                       <tr key={name}>
                         <td>{name}</td>

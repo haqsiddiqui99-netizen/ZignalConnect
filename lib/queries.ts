@@ -1,5 +1,6 @@
 import { many, one, run } from "@/lib/db";
-import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isProductPlan, overflowLimit, staffLimit, type ProductPlan } from "@/lib/entitlements";
+import type { SupportFollowup, SupportRequest } from "@/lib/support";
+import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isBillTerm, isProductPlan, overflowLimit, staffLimit, termQuote, type ProductPlan } from "@/lib/entitlements";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import type { BillCycle } from "@/lib/bill-cycle";
 import { addDays, addMonths, daysUntil, monthBounds, monthLabel, todayISO } from "@/lib/format";
@@ -80,7 +81,7 @@ export type Complaint = {
   customer_name: string;
   category: string;
   details: string;
-  status: "new" | "assigned" | "pending" | "resolved";
+  status: "open" | "in_progress" | "closed" | "cancelled" | "duplicate";
   provider_note: string;
   created_at: string;
   updated_at: string;
@@ -123,6 +124,7 @@ export type ProviderRecord = {
   reminder_soon_body: string;
   reminder_due_title: string;
   reminder_due_body: string;
+  billing_term: string;
 };
 
 const subscriberSelect = `
@@ -450,7 +452,7 @@ export function listComplaints(scope: { providerId: number } | { customerId: num
      JOIN users u ON u.id = c.user_id
      LEFT JOIN users a ON a.id = k.assignee_id
      WHERE ${where}
-     ORDER BY CASE k.status WHEN 'new' THEN 0 WHEN 'assigned' THEN 1 WHEN 'pending' THEN 2 ELSE 3 END, k.created_at DESC`,
+     ORDER BY CASE k.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, k.created_at DESC`,
     param,
   );
 }
@@ -589,12 +591,13 @@ export type OperatorProvider = {
   active: number;
   paused: number;
   overdue: number;
+  billing_term: string;
 };
 
 export function operatorDesk() {
   const today = todayISO();
   const providers = many<OperatorProvider>(
-    `SELECT p.id, p.name, p.product_plan, p.support_phone, p.created_at, p.subscriber_base,
+    `SELECT p.id, p.name, p.product_plan, p.billing_term, p.support_phone, p.created_at, p.subscriber_base,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id) AS subscribers,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'active') AS active,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'suspended') AS paused,
@@ -606,16 +609,20 @@ export function operatorDesk() {
     ...provider,
     product_plan: isProductPlan(provider.product_plan) ? provider.product_plan : "pro",
   }));
-  const booked = providers.reduce((sum, provider) => sum + CATALOG[provider.product_plan].price, 0);
+  const monthlyOf = (provider: (typeof providers)[number]) => {
+    const term = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
+    return termQuote(CATALOG[provider.product_plan].price, term).perMonth;
+  };
+  const booked = providers.reduce((sum, provider) => sum + monthlyOf(provider), 0);
   const plans = (Object.keys(CATALOG) as ProductPlan[]).map((plan) => {
-    const count = providers.filter((provider) => provider.product_plan === plan).length;
+    const onPlan = providers.filter((provider) => provider.product_plan === plan);
     const price = CATALOG[plan].price;
     return {
       plan,
       label: CATALOG[plan].label,
-      providers: count,
+      providers: onPlan.length,
       price,
-      revenue: count * price,
+      revenue: onPlan.reduce((sum, provider) => sum + monthlyOf(provider), 0),
     };
   });
   return {
@@ -629,40 +636,8 @@ export function operatorDesk() {
   };
 }
 
-export type SupportRequest = {
-  id: number;
-  provider_id: number;
-  provider_name: string;
-  user_id: number;
-  sender_name: string;
-  mobile: string;
-  message: string;
-  status: "open" | "in_progress" | "resolved";
-  reply: string;
-  created_at: string;
-  updated_at: string;
-  resolved_at: string;
-  priority: string;
-  topic: string;
-};
-
-export const SUPPORT_PRIORITIES = [
-  { value: "high", label: "High" },
-  { value: "medium", label: "Medium" },
-  { value: "low", label: "Low" },
-] as const;
-
-export const SUPPORT_TOPICS = [
-  { value: "billing", label: "Billing" },
-  { value: "bug", label: "A bug" },
-  { value: "subscriber", label: "Subscriber" },
-  { value: "connection", label: "Connection" },
-  { value: "other", label: "Other" },
-] as const;
-
-export function supportCode(id: number) {
-  return `SUP-${1000 + id}`;
-}
+export type { SupportFollowup, SupportRequest } from "@/lib/support";
+export { SUPPORT_PRIORITIES, SUPPORT_TOPICS, supportCode } from "@/lib/support";
 
 function recentMonthStarts(count: number) {
   const { start } = monthBounds();
@@ -794,18 +769,10 @@ export function listSupport(scope: { providerId: number } | { all: true }) {
      JOIN providers p ON p.id = s.provider_id
      JOIN users u ON u.id = s.user_id
      ${where}
-     ORDER BY CASE s.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, s.id DESC`,
+     ORDER BY CASE s.status WHEN 'new' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, s.id DESC`,
     ...params,
   );
 }
-
-export type SupportFollowup = {
-  id: number;
-  request_id: number;
-  message: string;
-  created_at: string;
-  sender_name: string;
-};
 
 export function listSupportFollowups(requestIds: number[]) {
   if (requestIds.length === 0) return [];

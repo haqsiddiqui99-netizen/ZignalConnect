@@ -14,6 +14,16 @@ export type Feature = "customBrand" | "logo" | "emailReminders" | "reports" | "s
 export const OVERAGE_RATE = 3;
 export const STAFF_OVERAGE_RATE = 10;
 export const EXTRA_MESSAGE_RATE = 0.5;
+// What it costs to send one included reminder. Extras are sold at EXTRA_MESSAGE_RATE.
+export const REMINDER_COST = 0.15;
+
+export type BillTerm = "monthly" | "quarterly" | "yearly";
+
+export const BILL_TERMS: { id: BillTerm; label: string; months: number; note: string }[] = [
+  { id: "monthly", label: "Monthly", months: 1, note: "Billed every month" },
+  { id: "quarterly", label: "Quarterly", months: 3, note: "10% off" },
+  { id: "yearly", label: "Yearly", months: 12, note: "2 months free" },
+];
 
 export const CATALOG: Record<
   ProductPlan,
@@ -88,6 +98,8 @@ export const PLAN_ORDER = Object.keys(CATALOG) as ProductPlan[];
 
 export const PLAN_POINTS: { label: string; plans: PlanFamily[] }[] = [
   { label: "Subscriber desk, plans, and manual payments", plans: ["pro", "ultra", "premium"] },
+  { label: "Instant Support for tickets and plan questions", plans: ["pro", "ultra", "premium"] },
+  { label: "AI chat shows your ISP name", plans: ["pro", "ultra", "premium"] },
   { label: "Subscribers raise connectivity complaints online", plans: ["pro", "ultra", "premium"] },
   { label: "Import customers from a spreadsheet", plans: ["pro", "ultra", "premium"] },
   { label: "Your ISP name on the subscriber portal", plans: ["pro", "ultra", "premium"] },
@@ -119,6 +131,18 @@ const FEATURES: Record<Feature, PlanFamily[]> = {
 
 export function isProductPlan(value: string): value is ProductPlan {
   return PLAN_ORDER.includes(value as ProductPlan);
+}
+
+export function isBillTerm(value: string): value is BillTerm {
+  return value === "monthly" || value === "quarterly" || value === "yearly";
+}
+
+export function termQuote(monthly: number, term: BillTerm) {
+  const months = term === "yearly" ? 12 : term === "quarterly" ? 3 : 1;
+  const full = monthly * months;
+  const due = term === "yearly" ? monthly * 10 : term === "quarterly" ? Math.round(monthly * 3 * 0.9) : monthly;
+  const save = full - due;
+  return { months, full, due, save, perMonth: Math.round(due / months), percent: full > 0 ? Math.round((save / full) * 100) : 0 };
 }
 
 export function planFamily(plan: ProductPlan): PlanFamily {

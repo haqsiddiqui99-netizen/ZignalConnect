@@ -55,7 +55,8 @@ export default async function UpgradePaymentPage({
         <p className="fine" style={{ marginBottom: 16 }}>
           {formatInr(order.plan_amount)} plan
           {order.tax > 0 ? ` · GST ${formatInr(order.tax)}` : " · GST not charged"}
-          {" · "}per month
+          {" · "}
+          {order.billing_term === "yearly" ? "per year, 2 months free" : order.billing_term === "quarterly" ? "every 3 months, 10% off" : "per month"}
         </p>
         <dl className="facts">
           <dt>Plan</dt>

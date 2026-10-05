@@ -69,6 +69,7 @@ export function getDb() {
   `);
   ensureReceiptSchema(globalForDb.lumenDb);
   ensureComplaintDesk(globalForDb.lumenDb);
+  ensureComplaintOutcomes(globalForDb.lumenDb);
   seedDemoComplaints(globalForDb.lumenDb);
   globalForDb.lumenDb.exec(`
     CREATE TABLE IF NOT EXISTS support_requests (
@@ -77,7 +78,7 @@ export function getDb() {
       user_id INTEGER NOT NULL,
       mobile TEXT NOT NULL,
       message TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('open', 'in_progress', 'resolved')),
+      status TEXT NOT NULL CHECK(status IN ('new', 'in_progress', 'closed', 'cancelled', 'duplicate')),
       reply TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -94,6 +95,7 @@ export function getDb() {
   if (supportColumns.size > 0 && !supportColumns.has("topic")) {
     globalForDb.lumenDb.exec("ALTER TABLE support_requests ADD COLUMN topic TEXT NOT NULL DEFAULT ''");
   }
+  ensureSupportStatuses(globalForDb.lumenDb);
   globalForDb.lumenDb.exec(`
     CREATE TABLE IF NOT EXISTS support_followups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,7 +240,7 @@ function migrate(db: DatabaseSync) {
       customer_id INTEGER NOT NULL,
       category TEXT NOT NULL,
       details TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('new', 'assigned', 'pending', 'resolved')),
+      status TEXT NOT NULL CHECK(status IN ('open', 'in_progress', 'closed', 'cancelled', 'duplicate')),
       provider_note TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -377,6 +379,12 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("reminder_soon_body")) db.exec("ALTER TABLE providers ADD COLUMN reminder_soon_body TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("reminder_due_title")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_title TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("reminder_due_body")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_body TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("billing_term")) db.exec("ALTER TABLE providers ADD COLUMN billing_term TEXT NOT NULL DEFAULT 'monthly'");
+
+  const orderColumns = columnNames(db, "upgrade_orders");
+  if (orderColumns.size > 0 && !orderColumns.has("billing_term")) {
+    db.exec("ALTER TABLE upgrade_orders ADD COLUMN billing_term TEXT NOT NULL DEFAULT 'monthly'");
+  }
 
   const batchColumns = columnNames(db, "import_batches");
   if (batchColumns.size > 0 && !batchColumns.has("kind")) {
@@ -553,7 +561,8 @@ function ensureReceiptSchema(db: DatabaseSync) {
       gst_mode TEXT NOT NULL CHECK(gst_mode IN ('none', 'cgst', 'igst')),
       status TEXT NOT NULL CHECK(status IN ('pending', 'paid')) DEFAULT 'pending',
       created_at TEXT NOT NULL,
-      paid_at TEXT NOT NULL DEFAULT ''
+      paid_at TEXT NOT NULL DEFAULT '',
+      billing_term TEXT NOT NULL DEFAULT 'monthly'
     );
   `);
 }
@@ -642,11 +651,61 @@ function retirePublishedDemoLogins(db: DatabaseSync) {
   }
 }
 
+function ensureSupportStatuses(db: DatabaseSync) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'support_requests'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row || row.sql.includes("'cancelled'")) return;
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("DROP TABLE IF EXISTS support_requests_next");
+  db.exec(`
+    CREATE TABLE support_requests_next (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      mobile TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('new', 'in_progress', 'closed', 'cancelled', 'duplicate')),
+      reply TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      resolved_at TEXT NOT NULL DEFAULT '',
+      priority TEXT NOT NULL DEFAULT '',
+      topic TEXT NOT NULL DEFAULT ''
+    );
+  `);
+  db.exec(`
+    INSERT INTO support_requests_next
+      (id, provider_id, user_id, mobile, message, status, reply, created_at, updated_at, resolved_at, priority, topic)
+    SELECT id, provider_id, user_id, mobile, message,
+      CASE status
+        WHEN 'open' THEN 'new'
+        WHEN 'resolved' THEN 'closed'
+        WHEN 'in_progress' THEN 'in_progress'
+        WHEN 'new' THEN 'new'
+        WHEN 'closed' THEN 'closed'
+        WHEN 'cancelled' THEN 'cancelled'
+        WHEN 'duplicate' THEN 'duplicate'
+        ELSE 'new'
+      END,
+      reply, created_at, updated_at,
+      CASE
+        WHEN status IN ('resolved', 'closed', 'cancelled', 'duplicate') THEN CASE WHEN resolved_at = '' THEN updated_at ELSE resolved_at END
+        ELSE ''
+      END,
+      priority, topic
+    FROM support_requests
+  `);
+  db.exec("DROP TABLE support_requests");
+  db.exec("ALTER TABLE support_requests_next RENAME TO support_requests");
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
 function ensureComplaintDesk(db: DatabaseSync) {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'complaints'").get() as
     | { sql: string }
     | undefined;
-  if (!row || row.sql.includes("'new'")) return;
+  if (!row || row.sql.includes("'new'") || row.sql.includes("'cancelled'")) return;
   db.exec("PRAGMA foreign_keys = OFF");
   db.exec("DROP TABLE IF EXISTS complaints_next");
   db.exec(`
@@ -672,6 +731,57 @@ function ensureComplaintDesk(db: DatabaseSync) {
       provider_note, created_at, updated_at,
       CASE WHEN status = 'resolved' THEN updated_at ELSE '' END,
       CASE category WHEN 'no_internet' THEN 4 WHEN 'drops' THEN 8 WHEN 'slow' THEN 24 ELSE 48 END
+    FROM complaints
+  `);
+  db.exec("DROP TABLE complaints");
+  db.exec("ALTER TABLE complaints_next RENAME TO complaints");
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function ensureComplaintOutcomes(db: DatabaseSync) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'complaints'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row || row.sql.includes("'cancelled'")) return;
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("DROP TABLE IF EXISTS complaints_next");
+  db.exec(`
+    CREATE TABLE complaints_next (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      details TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('open', 'in_progress', 'closed', 'cancelled', 'duplicate')),
+      provider_note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      assignee_id INTEGER,
+      resolved_at TEXT NOT NULL DEFAULT '',
+      sla_hours INTEGER NOT NULL DEFAULT 24
+    );
+  `);
+  db.exec(`
+    INSERT INTO complaints_next
+      (id, customer_id, category, details, status, provider_note, created_at, updated_at, resolved_at, sla_hours)
+    SELECT id, customer_id, category, details,
+      CASE status
+        WHEN 'new' THEN 'open'
+        WHEN 'assigned' THEN 'in_progress'
+        WHEN 'pending' THEN 'in_progress'
+        WHEN 'resolved' THEN 'closed'
+        WHEN 'open' THEN 'open'
+        WHEN 'in_progress' THEN 'in_progress'
+        WHEN 'closed' THEN 'closed'
+        WHEN 'cancelled' THEN 'cancelled'
+        WHEN 'duplicate' THEN 'duplicate'
+        ELSE 'open'
+      END,
+      provider_note, created_at, updated_at,
+      CASE
+        WHEN status IN ('resolved', 'closed', 'cancelled', 'duplicate') THEN CASE WHEN resolved_at = '' THEN updated_at ELSE resolved_at END
+        ELSE ''
+      END,
+      sla_hours
     FROM complaints
   `);
   db.exec("DROP TABLE complaints");
@@ -724,7 +834,7 @@ function seedDemoComplaints(db: DatabaseSync) {
       customer_id: customers[0].id,
       category: "no_internet",
       details: "The line has been down since this morning. The ONT power light is red and the Wi-Fi light is off.",
-      status: "new",
+      status: "open",
       note: "",
       created: hoursAgo(1),
       assignee: null,
@@ -735,7 +845,7 @@ function seedDemoComplaints(db: DatabaseSync) {
       customer_id: customers[1].id,
       category: "drops",
       details: "The connection drops every few minutes after 7pm. It comes back on its own after a restart.",
-      status: "assigned",
+      status: "in_progress",
       note: "Field visit booked for this evening.",
       created: hoursAgo(6),
       assignee: owner.id,
@@ -746,7 +856,7 @@ function seedDemoComplaints(db: DatabaseSync) {
       customer_id: customers[2].id,
       category: "slow",
       details: "A speed test stays under 10 Mbps on the 300 Mbps plan, on both Wi-Fi and the LAN cable.",
-      status: "pending",
+      status: "in_progress",
       note: "Waiting for the subscriber to confirm a time for the line test.",
       created: hoursAgo(30),
       assignee: owner.id,
@@ -757,7 +867,7 @@ function seedDemoComplaints(db: DatabaseSync) {
       customer_id: customers[3].id,
       category: "no_internet",
       details: "No internet after yesterday's rain. The link light on the router was off.",
-      status: "resolved",
+      status: "closed",
       note: "Fibre joint was reseated. The line tested at the plan speed.",
       created: hoursAgo(50),
       assignee: owner.id,
@@ -768,7 +878,7 @@ function seedDemoComplaints(db: DatabaseSync) {
       customer_id: customers[Math.min(4, customers.length - 1)].id,
       category: "other",
       details: "The router was replaced, but the old Wi-Fi name did not come back and the TV box cannot find the line.",
-      status: "resolved",
+      status: "closed",
       note: "New router configured and the TV box was paired again.",
       created: hoursAgo(80),
       assignee: owner.id,

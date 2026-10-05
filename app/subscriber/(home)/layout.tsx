@@ -56,6 +56,7 @@ export default async function PortalLayout({ children }: { children: React.React
       <div className="app-main">{children}</div>
       {person ? (
         <SubscriberChat
+          ispName={session.brandName}
           replies={[
             {
               question: "What plan am I on?",

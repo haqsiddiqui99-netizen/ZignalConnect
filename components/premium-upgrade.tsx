@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { openUpgradeCheckout } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
-import { CATALOG, STAFF_OVERAGE_RATE, limitLabel, overflowLimit, quotePremium } from "@/lib/entitlements";
+import { BillTermChoice, TermPrice } from "@/components/bill-term-choice";
+import { CATALOG, STAFF_OVERAGE_RATE, limitLabel, overflowLimit, quotePremium, type BillTerm } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { useState } from "react";
 
@@ -11,12 +12,15 @@ export function PremiumQuote({
   customers,
   staff,
   placeholder,
+  term: startingTerm = "monthly",
 }: {
   customers: number;
   staff: number;
   placeholder: string;
+  term?: BillTerm;
 }) {
   const [base, setBase] = useState("");
+  const [term, setTerm] = useState<BillTerm>(startingTerm);
   const count = Number(base);
   const quote = base.trim() === "" ? null : quotePremium(count);
   const plan = quote?.ok ? CATALOG[quote.plan] : null;
@@ -26,6 +30,7 @@ export function PremiumQuote({
   return (
     <form action={openUpgradeCheckout} className="stack">
       <input type="hidden" name="product_plan" value="premium" />
+      <BillTermChoice value={term} onChange={setTerm} />
       <label className="field">
         <span>Subscriber base</span>
         <input
@@ -43,8 +48,7 @@ export function PremiumQuote({
       </label>
       {plan && quote?.ok ? (
         <div className="quote-panel">
-          <p className="fine">Monthly rate</p>
-          <p className="quote-price">{formatInr(plan.price)}</p>
+          <TermPrice monthly={plan.price} term={term} />
           <p>
             {limitLabel(count)} subscribers is held on Premium for up to {limitLabel(plan.customers)}.
           </p>

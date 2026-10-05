@@ -94,7 +94,7 @@ export default async function OperatorRevenue({
       <article className="card" style={{ marginTop: 14 }}>
         <h2>Revenue by plan</h2>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
-          How many providers sit on each plan, and the monthly fee those desks book. This is the plan price, not money
+          How many providers sit on each plan, and the monthly fee those desks book. A quarterly or yearly desk is booked at its discounted monthly rate. This is the plan price, not money
           collected from a card.
         </p>
         <div className="table-wrap">

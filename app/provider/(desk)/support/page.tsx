@@ -5,14 +5,9 @@ import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { formatStamp } from "@/lib/format";
 import { deskMobile, listSupport, listSupportFollowups, SUPPORT_PRIORITIES, SUPPORT_TOPICS, supportCode, type SupportFollowup as Followup } from "@/lib/queries";
+import { SUPPORT_STATUSES, supportIsFinished, supportStatusLabel } from "@/lib/support";
 
 export const metadata = { title: "Zignal Support" };
-
-const STATUS: Record<string, string> = {
-  open: "Open",
-  in_progress: "Being looked at",
-  resolved: "Resolved",
-};
 
 export default async function SupportPage({
   searchParams,
@@ -30,10 +25,7 @@ export default async function SupportPage({
     notesByTicket.set(note.request_id, list);
   }
   const mobile = deskMobile(session.uid) || session.supportPhone;
-  const open = tickets.filter((ticket) => ticket.status === "open").length;
-  const progress = tickets.filter((ticket) => ticket.status === "in_progress").length;
-  const resolved = tickets.filter((ticket) => ticket.status === "resolved").length;
-  const highOpen = tickets.filter((ticket) => ticket.status !== "resolved" && ticket.priority === "high").length;
+  const highOpen = tickets.filter((ticket) => !supportIsFinished(ticket.status) && ticket.priority === "high").length;
 
   return (
     <>
@@ -90,15 +82,21 @@ export default async function SupportPage({
             {highOpen > 0 ? ` ${highOpen} high priority still open.` : ""}
           </p>
           <ul className="status-board">
-            <StatusRow count={open} total={tickets.length} kind="created" title="Created" />
-            <StatusRow count={progress} total={tickets.length} kind="progress" title="In progress" />
-            <StatusRow count={resolved} total={tickets.length} kind="closed" title="Closed / Resolved" />
+            {SUPPORT_STATUSES.map((item) => (
+              <StatusRow
+                key={item.value}
+                count={tickets.filter((ticket) => ticket.status === item.value).length}
+                total={tickets.length}
+                kind={item.value === "new" ? "created" : item.value === "in_progress" ? "progress" : "closed"}
+                title={item.label}
+              />
+            ))}
           </ul>
           {tickets[0] ? (
             <div className="status-latest">
               <span>Latest</span>
               <strong>
-                {supportCode(tickets[0].id)} · {STATUS[tickets[0].status] ?? tickets[0].status}
+                {supportCode(tickets[0].id)} · {supportStatusLabel(tickets[0].status)}
               </strong>
               <p>{tickets[0].message}</p>
             </div>
@@ -147,7 +145,7 @@ export default async function SupportPage({
                     </td>
                     <td>{labelOf(SUPPORT_TOPICS, ticket.topic)}</td>
                     <td>
-                      <span className={statusClass(ticket.status)}>{STATUS[ticket.status] ?? ticket.status}</span>
+                      <span className={statusClass(ticket.status)}>{supportStatusLabel(ticket.status)}</span>
                     </td>
                     <td>{ticket.sender_name}</td>
                     <td>{ticket.mobile}</td>
@@ -165,8 +163,9 @@ export default async function SupportPage({
 }
 
 function statusClass(status: string) {
-  if (status === "resolved") return "pill";
+  if (status === "new") return "pill warn";
   if (status === "in_progress") return "pill soon";
+  if (supportIsFinished(status)) return "pill";
   return "pill warn";
 }
 

@@ -8,9 +8,17 @@ type Reply = { question: string; text: string; href: string; label: string };
 type Ticket = { question: string; kind: "slow" | "not_working" | "down" };
 type Message = { from: "bot" | "you"; text: string; href?: string; label?: string };
 
-const greeting = "Choose a question about your line. Zignal AI is coming soon.";
-
-export function SubscriberChat({ replies, tickets }: { replies: Reply[]; tickets: Ticket[] }) {
+export function SubscriberChat({
+  ispName,
+  replies,
+  tickets,
+}: {
+  ispName: string;
+  replies: Reply[];
+  tickets: Ticket[];
+}) {
+  const name = ispName.trim() || "Your provider";
+  const greeting = `${name} here. Choose a question about your line. Zignal AI is coming soon.`;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{ from: "bot", text: greeting }]);
   const [busy, setBusy] = useState("");
@@ -64,7 +72,7 @@ export function SubscriberChat({ replies, tickets }: { replies: Reply[]; tickets
   return (
     <div className="desk-chat no-print">
       {open ? (
-        <section className="desk-chat-panel" aria-label="Zignal chat">
+        <section className="desk-chat-panel" aria-label={`${name} AI chat`}>
           <header className="desk-chat-head">
             <span className="desk-chat-avatar" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -73,8 +81,8 @@ export function SubscriberChat({ replies, tickets }: { replies: Reply[]; tickets
               </svg>
             </span>
             <div>
-              <strong>Zignal</strong>
-              <span>Zignal AI coming soon</span>
+              <strong>{name}</strong>
+              <span>AI chat</span>
             </div>
             <button type="button" className="desk-chat-close" onClick={shut} aria-label="Close chat">
               Close
@@ -116,7 +124,7 @@ export function SubscriberChat({ replies, tickets }: { replies: Reply[]; tickets
         type="button"
         className="desk-chat-btn"
         aria-expanded={open}
-        aria-label={open ? "Close Zignal chat" : "Open Zignal chat"}
+        aria-label={open ? `Close ${name} chat` : `Open ${name} chat`}
         onClick={() => (open ? shut() : setOpen(true))}
       >
         <svg viewBox="0 0 32 32" aria-hidden="true">

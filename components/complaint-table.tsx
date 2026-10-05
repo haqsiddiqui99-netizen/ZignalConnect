@@ -15,10 +15,11 @@ import { formatStamp } from "@/lib/format";
 import type { Complaint } from "@/lib/queries";
 
 const PILL: Record<string, string> = {
-  new: "pill warn",
-  assigned: "pill soon",
-  pending: "pill warn",
-  resolved: "pill",
+  open: "pill warn",
+  in_progress: "pill soon",
+  closed: "pill",
+  cancelled: "pill",
+  duplicate: "pill",
 };
 
 type Field = "status" | "assignee" | "note";

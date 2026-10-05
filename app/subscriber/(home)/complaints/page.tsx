@@ -2,7 +2,7 @@ import { raiseComplaint } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
-import { complaintCode } from "@/lib/complaints";
+import { complaintCode, complaintStatusLabel } from "@/lib/complaints";
 import { formatStamp } from "@/lib/format";
 import { getSubscriberByUserId, listComplaints } from "@/lib/queries";
 import { notFound } from "next/navigation";
@@ -16,13 +16,12 @@ const CATEGORIES = [
   { id: "other", label: "Other connectivity issue" },
 ];
 
-const STATUS: Record<string, string> = {
-  new: "New",
-  assigned: "Assigned",
-  pending: "Pending",
-  resolved: "Resolved",
-  open: "New",
-  in_progress: "Assigned",
+const STATUS_PILL: Record<string, string> = {
+  open: "pill warn",
+  in_progress: "pill soon",
+  closed: "pill",
+  cancelled: "pill",
+  duplicate: "pill",
 };
 
 export default async function PortalComplaints({
@@ -81,7 +80,9 @@ export default async function PortalComplaints({
                     {CATEGORIES.find((item) => item.id === ticket.category)?.label ?? ticket.category}
                   </div>
                   <div className="fine">
-                    {STATUS[ticket.status] ?? ticket.status} · {formatStamp(ticket.created_at)}
+                    <span className={STATUS_PILL[ticket.status] ?? "pill warn"}>{complaintStatusLabel(ticket.status)}</span>
+                    {" · "}
+                    {formatStamp(ticket.created_at)}
                   </div>
                   <p>{ticket.details}</p>
                   {ticket.provider_note ? <p className="fine">Provider: {ticket.provider_note}</p> : null}
