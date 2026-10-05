@@ -33,6 +33,7 @@ import {
   nowStamp,
   todayISO,
 } from "@/lib/format";
+import { isPasswordVia, mailConfigured, passwordResetMail, sendMail, siteOrigin } from "@/lib/mail";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
@@ -457,14 +458,127 @@ export async function updateSubscriber(formData: FormData) {
   go(`/provider/subscriber/${id}`, { notice: "Subscriber details saved." });
 }
 
+async function mailResetLink(input: {
+  userId: number;
+  kind: "desk" | "operator";
+  email: string;
+  ispName?: string;
+  signoff: string;
+  fromProvider?: boolean;
+}) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  run("DELETE FROM password_resets WHERE user_id = ? AND account_kind = ?", input.userId, input.kind);
+  run(
+    "INSERT INTO password_resets (user_id, token_hash, expires_at, account_kind) VALUES (?, ?, ?, ?)",
+    input.userId,
+    tokenHash,
+    String(Date.now() + 15 * 60 * 1000),
+    input.kind,
+  );
+  const mail = passwordResetMail({
+    ispName: input.ispName,
+    signoff: input.signoff,
+    link: `${siteOrigin()}/forgot/${token}`,
+    fromProvider: input.fromProvider,
+  });
+  const sent = await sendMail(input.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) run("DELETE FROM password_resets WHERE token_hash = ?", tokenHash);
+  return sent;
+}
+
 export async function resetPortalPassword(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
   const current = getSubscriber(id, session.providerId);
   if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
-  run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(DEMO_CUSTOMER_PASSWORD), current.user_id);
+  const via = readText(formData, "via");
+  if (!isPasswordVia(via)) go(`/provider/subscriber/${id}`, { error: "Choose email, WhatsApp, or message." });
+  if (via !== "email") {
+    const error =
+      via === "whatsapp"
+        ? "WhatsApp is not connected yet, so no reset link was sent."
+        : "Message is not connected yet, so no reset link was sent.";
+    go(`/provider/subscriber/${id}`, { error });
+  }
+  const sent = await mailResetLink({
+    userId: current.user_id,
+    kind: "desk",
+    email: current.email,
+    ispName: session.brandName,
+    signoff: session.brandName,
+    fromProvider: true,
+  });
+  if (!sent.ok) {
+    const error =
+      sent.reason === "unconfigured"
+        ? "Email is not connected yet, so no reset link was sent."
+        : "The email could not be sent, so no reset link was sent.";
+    go(`/provider/subscriber/${id}`, { error });
+  }
+  run("UPDATE customers SET password_via = ? WHERE id = ?", via, current.id);
   refresh();
-  go(`/provider/subscriber/${id}`, { notice: `Portal password reset to ${DEMO_CUSTOMER_PASSWORD}.` });
+  go(`/provider/subscriber/${id}`, { notice: `A link to set a new password was sent to ${current.email}.` });
+}
+
+export async function requestPasswordReset(formData: FormData) {
+  const email = readText(formData, "email").toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) go("/forgot", { error: "Enter the email you use to sign in." });
+  if (!mailConfigured()) go("/forgot", { error: "Password email is not connected yet. Add the mail account, then try again." });
+  const user = one<{ id: number; role: "admin" | "customer"; isp_name: string | null }>(
+    `SELECT u.id, u.role, p.name AS isp_name
+     FROM users u
+     LEFT JOIN providers p ON p.id = u.provider_id
+     WHERE lower(u.email) = ?`,
+    email,
+  );
+  const operator = user ? undefined : one<{ id: number }>("SELECT id FROM platform_admins WHERE lower(email) = ?", email);
+  const sent = user
+    ? await mailResetLink({
+        userId: user.id,
+        kind: "desk",
+        email,
+        ispName: user.isp_name || undefined,
+        signoff: user.role === "customer" ? user.isp_name || "Zignal Connect" : "Zignal Connect",
+      })
+    : operator
+      ? await mailResetLink({ userId: operator.id, kind: "operator", email, signoff: "Zignal Connect" })
+      : null;
+  if (sent && !sent.ok) go("/forgot", { error: "The reset email could not be sent. Try again in a little while." });
+  go("/forgot", { sent: "1" });
+}
+
+export async function completePasswordReset(formData: FormData) {
+  const token = readText(formData, "token");
+  const nextPassword = String(formData.get("new_password") ?? "");
+  const confirm = String(formData.get("confirm_password") ?? "");
+  const back = `/forgot/${encodeURIComponent(token)}`;
+  if (nextPassword.length < 6) go(back, { error: "Use at least 6 characters for the new password." });
+  if (nextPassword !== confirm) go(back, { error: "The new password and confirmation do not match." });
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const row = one<{ id: number; user_id: number; expires_at: string; account_kind: string; role: "admin" | "customer" | null }>(
+    `SELECT r.id, r.user_id, r.expires_at, r.account_kind, u.role
+     FROM password_resets r
+     LEFT JOIN users u ON u.id = r.user_id AND r.account_kind = 'desk'
+     WHERE r.token_hash = ?`,
+    tokenHash,
+  );
+  if (!row || Number(row.expires_at) < Date.now()) {
+    if (row) run("DELETE FROM password_resets WHERE id = ?", row.id);
+    go("/forgot", { error: "That reset link has expired. Start again." });
+  }
+  if (row.account_kind === "operator") {
+    run("UPDATE platform_admins SET password_hash = ? WHERE id = ?", hashPassword(nextPassword), row.user_id);
+    run("DELETE FROM password_resets WHERE user_id = ? AND account_kind = 'operator'", row.user_id);
+    refresh();
+    await setSession(row.user_id, "operator");
+    redirect("/zignal");
+  }
+  run("UPDATE users SET password_hash = ?, login_password = '' WHERE id = ?", hashPassword(nextPassword), row.user_id);
+  run("DELETE FROM password_resets WHERE user_id = ? AND account_kind = 'desk'", row.user_id);
+  refresh();
+  await setSession(row.user_id, "desk");
+  redirect(row.role === "admin" ? "/provider" : "/subscriber");
 }
 
 export async function recordPayment(formData: FormData) {

@@ -5,7 +5,6 @@ import { SubscriberBilling } from "@/components/subscriber-billing";
 import { SubscriberForm } from "@/components/subscriber-form";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner, LineId, StatusPill } from "@/components/ui";
-import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import { requireRole } from "@/lib/auth";
 import { allows } from "@/lib/entitlements";
 import { connectionId, formatStamp } from "@/lib/format";
@@ -85,13 +84,21 @@ export default async function CustomerDetailPage({
       <article className="card" id="portal-password" style={{ marginBottom: 14 }}>
         <h2>Portal password</h2>
         <p style={{ margin: "8px 0 12px" }}>
-          This subscriber signs in with <strong>{person.email}</strong>. If they forget the password, reset it to{" "}
-          <strong>{DEMO_CUSTOMER_PASSWORD}</strong> and tell them.
+          This subscriber signs in with <strong>{person.email}</strong>. Email sends a link to set a new password. The
+          current password stays until they open that link.
         </p>
-        <form action={resetPortalPassword}>
+        <form action={resetPortalPassword} className="stack">
           <input type="hidden" name="customer_id" value={person.id} />
-          <SubmitButton className="btn" pendingLabel="Resetting…">
-            Reset password to {DEMO_CUSTOMER_PASSWORD}
+          <label className="field">
+            <span>Send the reset link by</span>
+            <select name="via" defaultValue={person.password_via || "email"}>
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="sms">Message</option>
+            </select>
+          </label>
+          <SubmitButton className="btn" pendingLabel="Sending…">
+            Send reset link
           </SubmitButton>
         </form>
       </article>

@@ -53,6 +53,9 @@ export function getDb() {
   if (customerColumns.size > 0 && !customerColumns.has("country")) {
     globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN country TEXT NOT NULL DEFAULT ''");
   }
+  if (customerColumns.size > 0 && !customerColumns.has("password_via")) {
+    globalForDb.lumenDb.exec("ALTER TABLE customers ADD COLUMN password_via TEXT NOT NULL DEFAULT 'email'");
+  }
   ensureCustomerTaxColumns(globalForDb.lumenDb);
   ensurePlatformAdmin(globalForDb.lumenDb);
   retirePublishedDemoLogins(globalForDb.lumenDb);
@@ -105,7 +108,19 @@ export function getDb() {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_support_followups_request ON support_followups(request_id);
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash);
   `);
+  const resetColumns = columnNames(globalForDb.lumenDb, "password_resets");
+  if (resetColumns.size > 0 && !resetColumns.has("account_kind")) {
+    globalForDb.lumenDb.exec("ALTER TABLE password_resets ADD COLUMN account_kind TEXT NOT NULL DEFAULT 'desk'");
+  }
   ensureLineStatuses(globalForDb.lumenDb);
   return globalForDb.lumenDb;
 }

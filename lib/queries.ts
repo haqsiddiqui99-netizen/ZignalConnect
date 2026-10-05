@@ -48,6 +48,7 @@ export type Subscriber = {
   plan_billed: number;
   invoice_tax_included: number;
   invoice_tax_percent: number;
+  password_via: "email" | "whatsapp" | "sms";
 };
 
 export type Payment = {
@@ -133,7 +134,7 @@ const subscriberSelect = `
     c.plan_id, c.plan_label, CASE WHEN c.plan_label <> '' THEN c.plan_label ELSE p.name END AS plan_name, p.speed_mbps, p.price, p.data_cap,
     p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
     c.bill_cycle, c.plan_amount, c.plan_cycle, c.reminders, c.plan_frequency, c.plan_tax_included, c.plan_tax_percent,
-    c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent
+    c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent, c.password_via
   FROM customers c
   JOIN users u ON u.id = c.user_id
   JOIN plans p ON p.id = c.plan_id

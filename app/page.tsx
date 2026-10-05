@@ -106,6 +106,8 @@ export default async function LoginPage({
             <SubmitButton>Sign in</SubmitButton>
           </form>
           <p className="fine" style={{ marginTop: 14 }}>
+            <Link href="/forgot">Forgot password</Link>
+            {" · "}
             New ISP? <Link href="/signup">Open a desk</Link>
           </p>
         </div>
