@@ -9,6 +9,12 @@ export const SITE_LINKS = [
   { href: "/about", label: "About" },
 ];
 
+export const LEGAL_LINKS = [
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+  { href: "/refund", label: "Refund" },
+];
+
 export function SiteShell({ current, children }: { current: string; children: React.ReactNode }) {
   return (
     <div className="site">
@@ -46,6 +52,13 @@ export function SiteShell({ current, children }: { current: string; children: Re
           ))}
           <Link href="/signup">Open a desk</Link>
           <Link href="/">Sign in</Link>
+        </nav>
+        <nav className="site-legal" aria-label="Policies">
+          {LEGAL_LINKS.map((link) => (
+            <Link key={link.href} href={link.href} aria-current={link.href === current ? "page" : undefined}>
+              {link.label}
+            </Link>
+          ))}
         </nav>
         <p className="fine">Zignal Connect · Provider desk and subscriber portal for internet service providers.</p>
       </footer>

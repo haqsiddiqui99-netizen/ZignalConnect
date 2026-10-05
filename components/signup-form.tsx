@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { registerProvider } from "@/lib/actions";
 import { Banner } from "@/components/ui";
@@ -67,6 +68,10 @@ export function SignupForm() {
       <SignupPassword />
       <SignupPlans />
       <div>
+        <p className="fine">
+          Opening a desk means you agree to the <Link href="/terms">Terms</Link>, the <Link href="/privacy">Privacy</Link> page,
+          and the <Link href="/refund">Refund</Link> page.
+        </p>
         <SubmitButton>Open this desk</SubmitButton>
       </div>
     </form>

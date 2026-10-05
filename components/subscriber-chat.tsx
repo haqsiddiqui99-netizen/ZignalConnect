@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { raiseChatComplaint } from "@/lib/actions";
 
-type Reply = { question: string; text: string; href: string; label: string };
+type Fact = { label: string; value: string };
+type Reply = { question: string; text: string; href: string; label: string; facts?: Fact[] };
 type Ticket = { question: string; kind: "slow" | "not_working" | "down" };
-type Message = { from: "bot" | "you"; text: string; href?: string; label?: string };
+type Message = { from: "bot" | "you"; text: string; href?: string; label?: string; facts?: Fact[] };
 
 export function SubscriberChat({
   ispName,
@@ -18,35 +19,50 @@ export function SubscriberChat({
   tickets: Ticket[];
 }) {
   const name = ispName.trim() || "Your provider";
-  const greeting = `${name} here. Choose a question about your line. Zignal AI is coming soon.`;
+  const greeting = `${name} here. Ask about your line and I'll look it up.`;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{ from: "bot", text: greeting }]);
+  const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  const waitRef = useRef<number | null>(null);
 
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [messages, open]);
+  }, [messages, open, typing]);
+
+  useEffect(() => {
+    return () => {
+      if (waitRef.current) window.clearTimeout(waitRef.current);
+    };
+  }, []);
 
   function shut() {
+    if (waitRef.current) window.clearTimeout(waitRef.current);
     setOpen(false);
     setMessages([{ from: "bot", text: greeting }]);
+    setTyping(false);
     setBusy("");
   }
 
   function ask(reply: Reply) {
-    if (busy) return;
-    setMessages((current) => [
-      ...current,
-      { from: "you", text: reply.question },
-      { from: "bot", text: reply.text, href: reply.href, label: reply.label },
-    ]);
+    if (busy || typing) return;
+    setMessages((current) => [...current, { from: "you", text: reply.question }]);
+    setTyping(true);
+    waitRef.current = window.setTimeout(() => {
+      setMessages((current) => [
+        ...current,
+        { from: "bot", text: reply.text, facts: reply.facts, href: reply.href, label: reply.label },
+      ]);
+      setTyping(false);
+    }, 700);
   }
 
   async function report(ticket: Ticket) {
     if (busy) return;
     setBusy(ticket.kind);
+    setTyping(true);
     setMessages((current) => [...current, { from: "you", text: ticket.question }]);
     try {
       const result = await raiseChatComplaint(ticket.kind);
@@ -65,6 +81,7 @@ export function SubscriberChat({
         { from: "bot", text: "The complaint could not be sent. Try again from Complaints." },
       ]);
     } finally {
+      setTyping(false);
       setBusy("");
     }
   }
@@ -101,22 +118,51 @@ export function SubscriberChat({
                 ) : null}
                 <div>
                   <p>{message.text}</p>
+                  {message.facts && message.facts.length > 0 ? (
+                    <dl className="chat-facts">
+                      {message.facts.map((fact) => (
+                        <div key={fact.label}>
+                          <dt>{fact.label}</dt>
+                          <dd>{fact.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
                   {message.href ? <Link href={message.href}>{message.label}</Link> : null}
                 </div>
               </article>
             ))}
+            {typing ? (
+              <article className="theirs" aria-label="Looking that up">
+                <span className="desk-chat-avatar" aria-hidden="true">
+                  <svg viewBox="0 0 32 32">
+                    <path d="M7 21c4.2-7.5 13.8-7.5 18 0" fill="none" stroke="#e2b15a" strokeWidth="2" />
+                    <circle cx="16" cy="13.5" r="2.2" fill="#f4efe6" />
+                  </svg>
+                </span>
+                <div className="chat-typing" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </article>
+            ) : null}
           </div>
-          <div className="desk-chat-starters">
+          <div className="chat-prompts">
+            <p>Ask about your line</p>
             {replies.map((reply) => (
-              <button key={reply.question} type="button" disabled={Boolean(busy)} onClick={() => ask(reply)}>
+              <button key={reply.question} type="button" disabled={Boolean(busy) || typing} onClick={() => ask(reply)}>
                 {reply.question}
               </button>
             ))}
-            {tickets.map((ticket) => (
-              <button key={ticket.kind} type="button" disabled={Boolean(busy)} onClick={() => report(ticket)}>
-                {busy === ticket.kind ? "Sending…" : ticket.question}
-              </button>
-            ))}
+            <p>Something wrong?</p>
+            <div className="chat-prompts-row">
+              {tickets.map((ticket) => (
+                <button key={ticket.kind} type="button" disabled={Boolean(busy) || typing} onClick={() => report(ticket)}>
+                  {busy === ticket.kind ? "Sending…" : ticket.question}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       ) : null}

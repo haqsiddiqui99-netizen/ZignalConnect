@@ -109,6 +109,12 @@ export default async function LoginPage({
             <Link href="/forgot">Forgot password</Link>
             {" · "}
             New ISP? <Link href="/signup">Open a desk</Link>
+            {" · "}
+            <Link href="/privacy">Privacy</Link>
+            {" · "}
+            <Link href="/terms">Terms</Link>
+            {" · "}
+            <Link href="/refund">Refund</Link>
           </p>
         </div>
       </section>

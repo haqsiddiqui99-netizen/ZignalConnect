@@ -71,6 +71,7 @@ export async function setSession(uid: number, kind: "desk" | "operator" = "desk"
   const jar = await cookies();
   jar.set("lumen_session", `${body}.${sign(body)}`, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 12,
