@@ -607,11 +607,17 @@ export function operatorDesk() {
     product_plan: isProductPlan(provider.product_plan) ? provider.product_plan : "pro",
   }));
   const booked = providers.reduce((sum, provider) => sum + CATALOG[provider.product_plan].price, 0);
-  const plans = (Object.keys(CATALOG) as ProductPlan[]).map((plan) => ({
-    plan,
-    label: CATALOG[plan].label,
-    providers: providers.filter((provider) => provider.product_plan === plan).length,
-  }));
+  const plans = (Object.keys(CATALOG) as ProductPlan[]).map((plan) => {
+    const count = providers.filter((provider) => provider.product_plan === plan).length;
+    const price = CATALOG[plan].price;
+    return {
+      plan,
+      label: CATALOG[plan].label,
+      providers: count,
+      price,
+      revenue: count * price,
+    };
+  });
   return {
     providers,
     booked,

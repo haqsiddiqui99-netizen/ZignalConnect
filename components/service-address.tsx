@@ -1,10 +1,10 @@
 "use client";
 
-import { lookupPincode } from "@/lib/actions";
+import { lookupOpenDeskPincode, lookupPincode } from "@/lib/actions";
 import { INDIAN_STATES } from "@/lib/tax";
 import { useRef, useState } from "react";
 
-function usePinPlace(pincode: string, city: string, state: string, country: string) {
+function usePinPlace(pincode: string, city: string, state: string, country: string, openDesk = false) {
   const [pin, setPin] = useState(pincode);
   const [cityName, setCityName] = useState(city);
   const [stateName, setStateName] = useState(state);
@@ -21,7 +21,7 @@ function usePinPlace(pincode: string, city: string, state: string, country: stri
       return;
     }
     setNote("Looking up this PIN code…");
-    const result = await lookupPincode(digits);
+    const result = openDesk ? await lookupOpenDeskPincode(digits) : await lookupPincode(digits);
     if (requested.current !== digits) return;
     if (!result.ok) {
       setNote(result.error);
@@ -137,26 +137,47 @@ export function IspPincodeFields({
   city = "",
   state = "",
   country = "India",
+  addressLabel = "Address",
+  required = false,
+  openDesk = false,
+  addressValue,
+  onAddress,
 }: {
   address?: string;
   pincode?: string;
   city?: string;
   state?: string;
   country?: string;
+  addressLabel?: string;
+  required?: boolean;
+  openDesk?: boolean;
+  addressValue?: string;
+  onAddress?: (value: string) => void;
 }) {
-  const place = usePinPlace(pincode, city, state, country);
+  const place = usePinPlace(pincode, city, state, country, openDesk);
   return (
     <>
       <div className="row-2">
         <label className="field">
-          <span>Address</span>
-          <input name="address" defaultValue={address} />
+          <span>{addressLabel}</span>
+          {onAddress ? (
+            <input
+              name="address"
+              required={required}
+              maxLength={160}
+              value={addressValue ?? ""}
+              onChange={(event) => onAddress(event.target.value)}
+            />
+          ) : (
+            <input name="address" required={required} maxLength={160} defaultValue={address} />
+          )}
         </label>
         <label className="field">
           <span>PIN code</span>
           <input
             name="pincode"
             inputMode="numeric"
+            required={required}
             maxLength={6}
             pattern="[0-9]{6}"
             placeholder="400001"
@@ -165,7 +186,7 @@ export function IspPincodeFields({
           />
         </label>
       </div>
-      <PlaceFields {...place} requiredPlace={false} />
+      <PlaceFields {...place} requiredPlace={required} />
     </>
   );
 }

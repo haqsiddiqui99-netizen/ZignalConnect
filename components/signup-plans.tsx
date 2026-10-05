@@ -1,89 +1,180 @@
 "use client";
 
 import { useState } from "react";
+import {
+  CATALOG,
+  PLAN_POINTS,
+  PREMIUM_PLANS,
+  limitLabel,
+  overflowLimit,
+  planFamily,
+  type ProductPlan,
+} from "@/lib/entitlements";
+import { formatInr } from "@/lib/format";
 
-export type SignupPlan = {
-  id: string;
-  label: string;
-  price: string;
-  customers: number;
-  line: string;
-  overflow: string;
-  blurb: string;
-  points: string[];
-};
+function familyFor(count: number) {
+  if (count <= CATALOG.pro.customers) return "pro";
+  if (count <= CATALOG.ultra.customers) return "ultra";
+  return "premium";
+}
 
-export function SignupPlans({ plans }: { plans: SignupPlan[] }) {
+function premiumPlan(count: number): ProductPlan {
+  return PREMIUM_PLANS.find((plan) => count <= CATALOG[plan].customers) ?? "premium_30000";
+}
+
+function pointsFor(family: "pro" | "ultra" | "premium") {
+  return PLAN_POINTS.filter((point) => point.plans.includes(family)).map((point) => point.label);
+}
+
+export function SignupPlans() {
   const [base, setBase] = useState("");
-  const [picked, setPicked] = useState(plans[0]?.id ?? "pro");
+  const [chosen, setChosen] = useState("");
   const count = Number(base);
   const known = base.trim() !== "" && Number.isInteger(count) && count >= 1;
-  const ceiling = plans[plans.length - 1]?.customers ?? 0;
-  const over = known && count > ceiling;
-  const floor = plans.find((plan) => count <= plan.customers);
-  const held = plans.find((plan) => plan.id === picked && (!known || plan.customers >= count));
-  const selected = over ? "" : held?.id ?? floor?.id ?? "";
+  const fit = known ? familyFor(count) : "";
+  const selected = known ? chosen : "";
+  const premiumId = known ? premiumPlan(count) : "premium_3000";
+  const premiumTier = CATALOG[premiumId];
+
+  function onBase(value: string) {
+    setBase(value);
+    const next = Number(value);
+    if (value.trim() === "" || !Number.isInteger(next) || next < 1) {
+      setChosen("");
+      return;
+    }
+    setChosen(familyFor(next));
+  }
+
+  const proBlocked = known && count > CATALOG.pro.customers;
+  const ultraBlocked = known && count > CATALOG.ultra.customers;
 
   return (
     <>
-      <div className="signup-fields">
+      <div className="signup-base">
         <label className="field">
           <span>Subscriber base</span>
           <input
             name="subscriber_base"
             type="number"
             min={1}
-            max={ceiling || 30000}
             required
             placeholder="500"
             value={base}
-            onChange={(event) => setBase(event.target.value)}
+            onChange={(event) => onBase(event.target.value)}
           />
         </label>
       </div>
       <fieldset className="plan-pick signup-plans">
         <legend className="fine">Plan for that book</legend>
-        {plans.map((plan) => {
-          const blocked = known && count > plan.customers;
-          return (
-            <label className="card plan-option" key={plan.id}>
-              <input
-                type="radio"
-                name="product_plan"
-                value={plan.id}
-                checked={plan.id === selected}
-                disabled={blocked || over}
-                required
-                onChange={() => setPicked(plan.id)}
-              />
-              <p className="fine">
-                <span className="when-idle">{blocked ? "Too small" : "Choose"}</span>
-                <span className="when-picked">Selected</span>
-              </p>
-              <h2>{plan.label}</h2>
-              <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
-                {plan.price}
-              </p>
-              <p className="fine">per month</p>
-              <p style={{ margin: "10px 0" }}>{plan.blurb}</p>
-              <p className="fine">{plan.line}</p>
-              <p className="fine">{plan.overflow}</p>
-              <ul className="fine" style={{ paddingLeft: 18 }}>
-                {plan.points.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
-            </label>
-          );
-        })}
+        <label className="card plan-option">
+          <input
+            type="radio"
+            name="product_plan"
+            value="pro"
+            checked={selected === "pro"}
+            disabled={proBlocked}
+            required
+            onChange={() => setChosen("pro")}
+          />
+          <p className="fine">
+            <span className="when-idle">{proBlocked ? "Too small" : "Choose"}</span>
+            <span className="when-picked">Selected</span>
+          </p>
+          <h2>{CATALOG.pro.label}</h2>
+          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
+            {formatInr(CATALOG.pro.price)}
+          </p>
+          <p className="fine">per month</p>
+          <p style={{ margin: "10px 0" }}>{CATALOG.pro.blurb}</p>
+          <p className="fine">
+            {limitLabel(CATALOG.pro.customers)} customers · {limitLabel(CATALOG.pro.reminders)} reminders ·{" "}
+            {limitLabel(CATALOG.pro.staff)} staff · {CATALOG.pro.trialDays}-day trial
+          </p>
+          <p className="fine">
+            Overflow to {limitLabel(overflowLimit("pro"))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
+          </p>
+          <ul className="fine" style={{ paddingLeft: 18 }}>
+            {pointsFor("pro").map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </label>
+        <label className="card plan-option">
+          <input
+            type="radio"
+            name="product_plan"
+            value="ultra"
+            checked={selected === "ultra"}
+            disabled={ultraBlocked}
+            required
+            onChange={() => setChosen("ultra")}
+          />
+          <p className="fine">
+            <span className="when-idle">{ultraBlocked ? "Too small" : "Choose"}</span>
+            <span className="when-picked">Selected</span>
+          </p>
+          <h2>{CATALOG.ultra.label}</h2>
+          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
+            {formatInr(CATALOG.ultra.price)}
+          </p>
+          <p className="fine">per month</p>
+          <p style={{ margin: "10px 0" }}>{CATALOG.ultra.blurb}</p>
+          <p className="fine">
+            {limitLabel(CATALOG.ultra.customers)} customers · {limitLabel(CATALOG.ultra.reminders)} reminders ·{" "}
+            {limitLabel(CATALOG.ultra.staff)} staff · {CATALOG.ultra.trialDays}-day trial
+          </p>
+          <p className="fine">
+            Overflow to {limitLabel(overflowLimit("ultra"))} at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.
+          </p>
+          <ul className="fine" style={{ paddingLeft: 18 }}>
+            {pointsFor("ultra").map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </label>
+        <label className="card plan-option">
+          <input
+            type="radio"
+            name="product_plan"
+            value={premiumId}
+            checked={selected === "premium"}
+            required
+            onChange={() => setChosen("premium")}
+          />
+          <p className="fine">
+            <span className="when-idle">Choose</span>
+            <span className="when-picked">Selected</span>
+          </p>
+          <h2>Premium</h2>
+          <p className="hero-price" style={{ color: "var(--ink)", fontSize: 36 }}>
+            {known && selected === "premium" ? formatInr(premiumTier.price) : `from ${formatInr(CATALOG.premium_3000.price)}`}
+          </p>
+          <p className="fine">per month, set from the subscriber base</p>
+          <p style={{ margin: "10px 0" }}>
+            20 staff for every 10,000 subscribers. Extra staff are ₹10 each per month. The rate is worked out from the subscriber base.
+          </p>
+          <p className="fine">
+            {known && count > CATALOG.premium_30000.customers
+              ? `A book above ${limitLabel(CATALOG.premium_30000.customers)} stays on Premium.`
+              : `Up to ${limitLabel(premiumTier.customers)} customers · ${limitLabel(premiumTier.staff)} staff · ${premiumTier.trialDays}-day trial`}
+          </p>
+          <p className="fine">Overflow at ₹3 each. Extra staff ₹10 each per month. Extra messages ₹0.50.</p>
+          <ul className="fine" style={{ paddingLeft: 18 }}>
+            {pointsFor("premium").map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </label>
       </fieldset>
-      {over ? (
-        <p className="fine">The largest desk is {plans[plans.length - 1]?.label}. A book of {count.toLocaleString("en-IN")} does not fit.</p>
-      ) : known && floor ? (
+      {known && fit ? (
         <p className="fine">
-          A book of {count.toLocaleString("en-IN")} opens on {floor.label}. Larger tiers stay open.
+          A book of {count.toLocaleString("en-IN")} opens on {fit === "premium" ? "Premium" : CATALOG[fit].label}.
+          {selected && selected !== fit ? ` ${selected === "premium" ? "Premium" : CATALOG[selected].label} is selected.` : ""}
         </p>
-      ) : null}
+      ) : (
+        <p className="fine">Enter the subscriber base. Pro holds up to 500, Ultra up to 1,000, and anything above 1,000 is Premium.</p>
+      )}
     </>
   );
 }

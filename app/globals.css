@@ -524,6 +524,42 @@ input.tax-locked, input[readonly].tax-locked, select.tax-locked:disabled { backg
 .signup-intro p { color: var(--muted); }
 .signup-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 .signup-plans { border: 0; padding: 0; margin: 8px 0 4px; }
+.plan-pick.signup-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.password-meter { grid-column: 1 / -1; margin: 0; }
+.password-box { position: relative; }
+.password-box input { width: 100%; padding-right: 42px; }
+.password-eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.password-eye svg { display: block; width: 20px; height: 20px; margin: 0 auto; }
+.password-status { margin: 0; }
+.password-status strong.weak { color: var(--bad); }
+.password-status strong.fair { color: var(--warn); }
+.password-status strong.strong { color: var(--good); }
+.password-rules { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.password-rules span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+.password-rules span.met { color: var(--good); border-color: var(--good); background: var(--good-bg); }
+.password-match { color: var(--good); margin: 0; }
+.password-meter strong.weak { color: #8a3b2a; }
+.password-meter strong.fair { color: #8a6a1f; }
+.password-meter strong.strong { color: #1f6b45; }
+.signup-base { width: 50%; margin: 18px auto 8px; }
+.signup-base input { font-family: Georgia, serif; font-size: 32px; padding: 14px 16px; }
 .signup-plans legend { grid-column: 1 / -1; margin-bottom: 10px; }
 .usage-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .usage-copy { flex: 1; min-width: 0; }
@@ -710,11 +746,12 @@ html[data-theme="dark"] .plan-option:has(input:focus-visible) { outline-color: #
   .hero-card, .page-head { flex-direction: column; align-items: flex-start; }
   .subscriber-tools { grid-template-columns: minmax(0, 1fr); }
   .subscriber-tools .demo-row { flex-wrap: wrap; justify-content: flex-start; }
-  .row-2, .plan-pick, .signup-fields, .charge-row, .bill-row, .account-meta, .discount-row, .isp-line.four, .isp-line.three, .pay-detail-grid, .pay-detail-grid.two { grid-template-columns: 1fr; }
+  .row-2, .plan-pick, .plan-pick.signup-plans, .signup-fields, .charge-row, .bill-row, .account-meta, .discount-row, .isp-line.four, .isp-line.three, .pay-detail-grid, .pay-detail-grid.two { grid-template-columns: 1fr; }
   .pay-methods.choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .support-top { grid-template-columns: 1fr; }
   .row-trash { justify-self: start; }
   .signup { padding: 20px 16px 48px; }
+  .signup-base { width: 100%; }
   .signup-top, .usage-card { flex-direction: column; align-items: flex-start; }
   .signup-intro h1 { font-size: 40px; }
 }

@@ -15,6 +15,7 @@ import {
   isProductPlan,
   limitLabel,
   minimumPlan,
+  planFamily,
   planFitsBase,
   quotePremium,
   type ProductPlan,
@@ -234,8 +235,7 @@ function readPinDirectory(pincode: string) {
     );
 }
 
-export async function lookupPincode(pin: string) {
-  await requireRole("admin");
+async function findPincode(pin: string) {
   const pincode = pin.replace(/\s+/g, "");
   if (!/^\d{6}$/.test(pincode)) return { ok: false as const, error: "Enter a 6-digit PIN code." };
   try {
@@ -255,6 +255,15 @@ export async function lookupPincode(pin: string) {
   } catch {
     return { ok: false as const, error: "The PIN code directory did not respond. Enter the city, state, and country." };
   }
+}
+
+export async function lookupPincode(pin: string) {
+  await requireRole("admin");
+  return findPincode(pin);
+}
+
+export async function lookupOpenDeskPincode(pin: string) {
+  return findPincode(pin);
 }
 
 function trialBlock(usage: ReturnType<typeof getUsage>) {
@@ -1017,33 +1026,56 @@ export async function changePassword(formData: FormData) {
   go("/subscriber", { notice: "Password updated." });
 }
 
-export async function registerProvider(formData: FormData) {
+export async function registerProvider(
+  _previous: { error: string } | null,
+  formData: FormData,
+): Promise<{ error: string }> {
   const isp = readText(formData, "isp_name");
   const name = readText(formData, "name");
   const email = readText(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm_password") ?? "");
   const phone = readText(formData, "support_phone").replace(/\s+/g, "");
+  const logo = readText(formData, "logo_letter").toUpperCase();
+  const gstin = cleanGstin(readText(formData, "gstin"));
+  const address = readText(formData, "address");
+  const city = readText(formData, "city");
+  const state = readText(formData, "state");
+  const country = readText(formData, "country");
+  const pincode = readText(formData, "pincode").replace(/\s+/g, "");
   const plan = readText(formData, "product_plan");
   const base = Number(readText(formData, "subscriber_base"));
-  if (isp.length < 2) go("/signup", { error: "Enter your ISP name." });
-  if (name.length < 2) go("/signup", { error: "Enter your name." });
-  if (!/^\S+@\S+\.\S+$/.test(email)) go("/signup", { error: "Enter a valid email." });
-  if (password.length < 6) go("/signup", { error: "Use at least 6 characters for the password." });
-  if (phone && !/^[6-9]\d{9}$/.test(phone)) go("/signup", { error: "Enter a 10-digit support number, or leave it blank." });
-  if (!Number.isInteger(base) || base < 1 || base > 1_000_000) {
-    go("/signup", { error: "Enter how many subscribers you have, as a whole number." });
+  if (isp.length < 2) return { error: "Enter your ISP name." };
+  if (name.length < 2) return { error: "Enter your name." };
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { error: "Enter a valid email." };
+  if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    return { error: "Use at least 8 characters, with a lower letter, an upper letter, a number, and a special character." };
   }
-  if (!isProductPlan(plan)) go("/signup", { error: "Choose Pro, Ultra, or a Premium tier." });
+  if (password !== confirm) return { error: "Type the same password in both boxes." };
+  if (!/^[A-Z]{2}$/.test(logo)) return { error: "Enter a 2-letter logo." };
+  if (address.length < 3) return { error: "Enter the office address." };
+  if (address.length > 160) return { error: "Keep the office address shorter." };
+  if (!/^\d{6}$/.test(pincode)) return { error: "Enter a 6-digit PIN code." };
+  if (city.length < 2) return { error: "Enter the city." };
+  if (!state || !isIndianState(state)) return { error: "Choose a state." };
+  if (country.length < 2 || country.length > 40) return { error: "Enter the country." };
+  if (phone && !/^[6-9]\d{9}$/.test(phone)) return { error: "Enter a 10-digit support number, or leave it blank." };
+  if (!Number.isSafeInteger(base) || base < 1) {
+    return { error: "Enter how many subscribers you have, as a whole number." };
+  }
+  if (!isProductPlan(plan)) return { error: "Choose Pro, Ultra, or Premium." };
+  if (base > CATALOG.ultra.customers && planFamily(plan) !== "premium") {
+    return { error: "A book above 1,000 subscribers is on Premium." };
+  }
   if (base > CATALOG.premium_30000.customers) {
-    go("/signup", { error: `The largest desk is ${CATALOG.premium_30000.label} (${limitLabel(CATALOG.premium_30000.customers)} subscribers).` });
-  }
-  if (!planFitsBase(plan, base)) {
+    if (plan !== "premium_30000") return { error: "A book above 1,000 subscribers is on Premium." };
+  } else if (!planFitsBase(plan, base)) {
     const fit = CATALOG[minimumPlan(base)];
-    go("/signup", {
+    return {
       error: `${CATALOG[plan].label} holds ${limitLabel(CATALOG[plan].customers)} subscribers. A book of ${base} needs ${fit.label}.`,
-    });
+    };
   }
-  if (one("SELECT id FROM users WHERE email = ?", email)) go("/signup", { error: "That email is already used for a login." });
+  if (one("SELECT id FROM users WHERE email = ?", email)) return { error: "That email is already used for a login." };
 
   const trialEnds = addDays(todayISO(), CATALOG[plan].trialDays);
   const db = getDb();
@@ -1052,15 +1084,21 @@ export async function registerProvider(formData: FormData) {
   try {
     const provider = run(
       `INSERT INTO providers
-        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       isp,
       plan,
       phone,
-      isp.trim().slice(0, 1).toUpperCase(),
+      logo,
       nowStamp(),
       base,
       trialEnds,
+      gstin,
+      address,
+      city,
+      state,
+      country,
+      pincode,
     );
     const user = run(
       "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",

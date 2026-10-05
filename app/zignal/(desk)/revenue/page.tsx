@@ -3,7 +3,7 @@ import { requireOperator } from "@/lib/auth";
 import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
 import { addDays, addMonths, formatInr, formatStamp, isDate, todayISO } from "@/lib/format";
-import { listProviderPayments, paymentYears, zignalRevenue } from "@/lib/queries";
+import { listProviderPayments, operatorDesk, paymentYears, zignalRevenue } from "@/lib/queries";
 import { ensureDeskCharges, listDeskCharges } from "@/lib/receipts";
 
 export const metadata = { title: "Revenue" };
@@ -46,6 +46,7 @@ export default async function OperatorRevenue({
   const sort = SORTS.some((item) => item.key === query.sort) ? query.sort! : "paid_at";
   const dir = query.dir === "asc" ? "asc" : "desc";
   const revenue = zignalRevenue();
+  const desk = operatorDesk();
   const payments = listProviderPayments({ ...range, sort, dir });
   const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
   const years = paymentYears();
@@ -90,7 +91,42 @@ export default async function OperatorRevenue({
           <b>{formatInr(revenue.expected)}</b>
         </article>
       </section>
-      <article className="card">
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Revenue by plan</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          How many providers sit on each plan, and the monthly fee those desks book. This is the plan price, not money
+          collected from a card.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th className="num">Providers</th>
+                <th className="num">Fee each month</th>
+                <th className="num">Booked revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {desk.plans.map((item) => (
+                <tr key={item.plan}>
+                  <td>{item.label}</td>
+                  <td className="num">{item.providers}</td>
+                  <td className="num">{formatInr(item.price)}</td>
+                  <td className="num">{formatInr(item.revenue)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td>All plans</td>
+                <td className="num">{desk.providers.length}</td>
+                <td className="num" />
+                <td className="num">{formatInr(desk.booked)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article className="card" style={{ marginTop: 14 }}>
         <h2>Fees by month</h2>
         <RevenueChart points={revenue.series} />
       </article>
