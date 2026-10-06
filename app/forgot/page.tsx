@@ -16,10 +16,7 @@ export default async function ForgotPasswordPage({
       <div className="panel-card">
         <h2>Forgot password</h2>
         {sent === "1" ? (
-          <p className="fine">
-            Check your registered email and set a new password. The link works once, for 15 minutes. If the email is
-            not registered, nothing is sent.
-          </p>
+          <p className="fine">Check your registered email and set a new password. The link works once, for 15 minutes.</p>
         ) : (
           <>
             <p className="fine">Enter the email you use to sign in. A link to set a new password is sent only to that inbox.</p>

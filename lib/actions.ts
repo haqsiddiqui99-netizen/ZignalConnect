@@ -524,7 +524,6 @@ export async function resetPortalPassword(formData: FormData) {
 export async function requestPasswordReset(formData: FormData) {
   const email = readText(formData, "email").toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) go("/forgot", { error: "Enter the email you use to sign in." });
-  if (!mailConfigured()) go("/forgot", { error: "Password email is not connected yet. Add the mail account, then try again." });
   const user = one<{ id: number; role: "admin" | "customer"; isp_name: string | null }>(
     `SELECT u.id, u.role, p.name AS isp_name
      FROM users u
@@ -533,6 +532,8 @@ export async function requestPasswordReset(formData: FormData) {
     email,
   );
   const operator = user ? undefined : one<{ id: number }>("SELECT id FROM platform_admins WHERE lower(email) = ?", email);
+  if (!user && !operator) go("/forgot", { error: "This email is not on an account." });
+  if (!mailConfigured()) go("/forgot", { error: "Password email is not connected yet. Add the mail account, then try again." });
   const sent = user
     ? await mailResetLink({
         userId: user.id,
@@ -544,7 +545,8 @@ export async function requestPasswordReset(formData: FormData) {
     : operator
       ? await mailResetLink({ userId: operator.id, kind: "operator", email, signoff: "Zignal Connect" })
       : null;
-  if (sent && !sent.ok) go("/forgot", { error: "The reset email could not be sent. Try again in a little while." });
+  if (!sent) go("/forgot", { error: "This email is not on an account." });
+  if (!sent.ok) go("/forgot", { error: "The reset email could not be sent. Try again in a little while." });
   go("/forgot", { sent: "1" });
 }
 
