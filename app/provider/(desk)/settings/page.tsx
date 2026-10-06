@@ -95,10 +95,10 @@ export default async function DeskSettings({
       <article className="card" style={{ marginTop: 14 }}>
         <h2>Renewal reminders</h2>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
-          Two notes are posted on the subscriber portal: one 3 days before the due date, and one on the due date. A line
-          that is already paid does not get either note. Use {"{name}"}, {"{plan}"}, {"{date}"}, {"{amount}"}, and {"{isp}"}
-          where the subscriber's details should appear. A new subscriber also gets one welcome message with the plan, the
-          next payment date, and the portal login.
+          One email goes 3 days before the due date, and one on the due date, even when nobody opens the desk. A copy
+          stays on the subscriber portal. A line that is already paid does not get either note. Use {"{name}"}, {"{plan}"},{" "}
+          {"{date}"}, {"{amount}"}, and {"{isp}"} where the subscriber's details should appear. A new subscriber also gets a
+          welcome email with their sign-in details. Message and WhatsApp are not connected yet.
         </p>
         {session.isOwner ? (
           <form action={saveReminderMessages} className="stack">

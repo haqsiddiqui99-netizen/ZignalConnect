@@ -30,9 +30,10 @@ export default function PrivacyPage() {
         </p>
         <h2>Mail</h2>
         <p>
-          A password reset sends one email to the address on the account, from support@zignalconnect.com. The message
-          holds a link, not the password. Payment reminders chosen as Email, SMS, or WhatsApp stay on the portal until
-          those channels are connected.
+          A password reset sends one email to the address on the account, from support@zignalconnect.com. That message
+          holds a link, not the password. A new subscriber receives a welcome email with their sign-in email and first
+          password. Renewal emails go out 3 days before the due date and on the due date. Message and WhatsApp are not
+          connected yet.
         </p>
         <h2>Sign-in</h2>
         <p>

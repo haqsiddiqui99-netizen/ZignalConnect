@@ -7,7 +7,6 @@ import { normalizeDate, parsePlanCsv, wholeUnits } from "@/lib/csv";
 import crypto from "crypto";
 import { execFile } from "node:child_process";
 import { getDb, many, one, run } from "@/lib/db";
-import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import {
   allows,
   BILL_TERMS,
@@ -33,8 +32,8 @@ import {
   nowStamp,
   todayISO,
 } from "@/lib/format";
-import { isPasswordVia, mailConfigured, passwordResetMail, sendMail, siteOrigin } from "@/lib/mail";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { isPasswordVia, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
+import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import {
@@ -318,6 +317,7 @@ export async function createSubscriber(formData: FormData) {
     go("/provider/subscriber/new", { error: "That email is already used for a login." });
   }
 
+  const password = newSubscriberPassword();
   const db = getDb();
   let customerId = 0;
   db.exec("BEGIN");
@@ -325,7 +325,7 @@ export async function createSubscriber(formData: FormData) {
     const user = run(
       "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'customer', ?, ?, ?, 0)",
       input.email,
-      hashPassword(DEMO_CUSTOMER_PASSWORD),
+      hashPassword(password),
       input.name,
       nowStamp(),
       session.providerId,
@@ -396,18 +396,21 @@ export async function createSubscriber(formData: FormData) {
         plan.customName,
       );
     }
-    postOnboardingMessage(customerId, session.providerId, DEMO_CUSTOMER_PASSWORD);
+    postOnboardingMessage(customerId, session.providerId);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
 
+  const welcome = welcomeMail({ ispName: session.brandName, email: input.email, password });
+  const mailed = await sendMail(input.email, welcome.subject, welcome.text, welcome.html);
   syncDeskOverflow(session.providerId);
   refresh();
-  go(`/provider/subscriber/${customerId}`, {
-    notice: `Subscriber added. Portal password is ${DEMO_CUSTOMER_PASSWORD}. A welcome message with the plan, next payment date, and login is on their portal.`,
-  });
+  const notice = mailed.ok
+    ? `Subscriber added. A welcome email with the sign-in details was sent to ${input.email}.`
+    : `Subscriber added. The welcome email could not be sent to ${input.email}. Use Send reset link.`;
+  go(`/provider/subscriber/${customerId}`, { notice });
 }
 
 export async function updateSubscriber(formData: FormData) {
@@ -996,19 +999,28 @@ export async function sendReminder(formData: FormData) {
     go(`/provider/subscriber/${id}`, { error: "That reminder is too long." });
   }
 
+  if (channel === "email") {
+    if (!mailConfigured()) go(`/provider/subscriber/${id}`, { error: "Email is not connected yet, so the reminder was not sent." });
+    const mail = renewalMail({ ispName: session.brandName, signoff: session.brandName, title, body });
+    const mailed = await sendMail(current.email, mail.subject, mail.text, mail.html);
+    if (!mailed.ok) go(`/provider/subscriber/${id}`, { error: "The reminder email could not be sent." });
+  }
+
   run(
     "INSERT INTO reminders (customer_id, title, body, created_at, channel) VALUES (?, ?, ?, ?, ?)",
     id,
     title,
     body,
     nowStamp(),
-    channel,
+    channel === "email" ? "email" : channel,
   );
   refresh();
   const delivery =
-    channel === "portal"
-      ? "Reminder is on the subscriber portal."
-      : `Reminder is on the subscriber portal, marked as ${channel}. Inbox and phone delivery needs a mail or SMS account connected later.`;
+    channel === "email"
+      ? `Reminder emailed to ${current.email}. A copy is on the subscriber portal.`
+      : channel === "portal"
+        ? "Reminder is on the subscriber portal."
+        : "Message and WhatsApp are not connected yet, so this reminder is only on the subscriber portal.";
   go(`/provider/subscriber/${id}`, { notice: delivery });
 }
 
@@ -1300,7 +1312,7 @@ export async function importCustomers(formData: FormData) {
   let imported = 0;
   let updated = 0;
   const today = todayISO();
-  const passwordHash = hashPassword(DEMO_CUSTOMER_PASSWORD);
+  const welcomes: { email: string; password: string }[] = [];
   const db = getDb();
   let batchId = 0;
 
@@ -1574,10 +1586,11 @@ export async function importCustomers(formData: FormData) {
 
       if (!main || !invoiceTax.ok || billCycle === "invalid" || reminders === "invalid") continue;
 
+      const password = newSubscriberPassword();
       const user = run(
         "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'customer', ?, ?, ?, 0)",
         email,
-        passwordHash,
+        hashPassword(password),
         name,
         nowStamp(),
         session.providerId,
@@ -1653,7 +1666,8 @@ export async function importCustomers(formData: FormData) {
         );
         placedDiscounts.add(key);
       }
-      postOnboardingMessage(Number(customer.lastInsertRowid), session.providerId, DEMO_CUSTOMER_PASSWORD);
+      postOnboardingMessage(Number(customer.lastInsertRowid), session.providerId);
+      welcomes.push({ email, password });
       seen.add(email);
       imported += 1;
       slots -= 1;
@@ -1675,10 +1689,23 @@ export async function importCustomers(formData: FormData) {
     db.exec("ROLLBACK");
     throw error;
   }
+  let welcomeFailed = 0;
+  for (const welcome of welcomes) {
+    const mail = welcomeMail({ ispName: session.brandName, email: welcome.email, password: welcome.password });
+    const mailed = await sendMail(welcome.email, mail.subject, mail.text, mail.html);
+    if (!mailed.ok) welcomeFailed += 1;
+  }
   if (imported > 0) syncDeskOverflow(session.providerId);
   refresh();
+  const summary = [`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ");
+  const welcomeNote =
+    welcomes.length === 0
+      ? ""
+      : welcomeFailed === 0
+        ? " A welcome email with a private password was sent to each new subscriber."
+        : ` ${welcomeFailed} welcome email${welcomeFailed === 1 ? "" : "s"} could not be sent. Use Send reset link for those lines.`;
   go("/provider/import", {
-    notice: `${[`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ")}. Portal password for new logins is ${DEMO_CUSTOMER_PASSWORD}. Each new subscriber has a welcome message on the portal.`,
+    notice: `${summary}.${welcomeNote}`,
     batch: String(batchId),
   });
 }

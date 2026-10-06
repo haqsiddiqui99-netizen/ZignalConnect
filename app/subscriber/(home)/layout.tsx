@@ -9,7 +9,6 @@ import { portalBrand } from "@/lib/entitlements";
 import { connectionId, dueLabel, formatDate, formatInr, formatSpeed } from "@/lib/format";
 import { lineStatusLabel } from "@/lib/line-status";
 import { getSubscriberByUserId, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
-import { issueRenewalReminders } from "@/lib/renewals";
 
 function namedLine(count: number, singular: string, plural: string, names: string, empty: string) {
   if (count === 0) return empty;
@@ -19,7 +18,6 @@ function namedLine(count: number, singular: string, plural: string, names: strin
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("customer");
-  issueRenewalReminders(session.providerId);
   const brand = portalBrand(session.productPlan, session.brandName, session.logoLetter);
   const person = getSubscriberByUserId(session.uid);
   const charges = person ? listCustomerCharges(person.id) : [];

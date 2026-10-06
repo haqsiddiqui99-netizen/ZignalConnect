@@ -3,6 +3,7 @@ import { invoiceFor } from "@/lib/charges";
 import { many, one, run } from "@/lib/db";
 import { allows } from "@/lib/entitlements";
 import { daysUntil, formatDate, formatInr, formatSpeed, nowStamp } from "@/lib/format";
+import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
 import { getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
 
 type DueLine = {
@@ -42,7 +43,7 @@ function amountDue(customerId: number, providerId: number) {
   return { person, due };
 }
 
-export function postOnboardingMessage(customerId: number, providerId: number, password: string) {
+export function postOnboardingMessage(customerId: number, providerId: number) {
   if (one("SELECT id FROM reminders WHERE customer_id = ? AND stage = 'onboard'", customerId)) return;
   const billed = amountDue(customerId, providerId);
   const provider = getProvider(providerId);
@@ -51,9 +52,9 @@ export function postOnboardingMessage(customerId: number, providerId: number, pa
   const amount = due > 0 ? due : person.plan_amount || person.price;
   const plan = `${person.plan_name} · ${formatSpeed(person.speed_mbps)} · ${billCycleLabel(person.bill_cycle).toLowerCase()} · ${formatInr(amount)}`;
   const title = `Welcome to ${provider.name}`.slice(0, 80);
-  const body = `Your plan is ${plan}. The next payment date is ${formatDate(person.renew_date)}. Sign in with ${person.email}. The password is ${password}.`;
+  const body = `Your plan is ${plan}. The next payment date is ${formatDate(person.renew_date)}. Sign-in details were sent to ${person.email}.`;
   run(
-    "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'portal', 'onboard', '')",
+    "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', 'onboard', '')",
     customerId,
     title,
     body.slice(0, 400),
@@ -61,9 +62,9 @@ export function postOnboardingMessage(customerId: number, providerId: number, pa
   );
 }
 
-export function issueRenewalReminders(providerId: number) {
+export async function issueRenewalReminders(providerId: number) {
   const provider = getProvider(providerId);
-  if (!provider || !allows(provider.product_plan, "renewalReminders")) return 0;
+  if (!provider || !allows(provider.product_plan, "renewalReminders")) return { emailed: 0, failed: 0 };
 
   const lines = many<DueLine>(
     `SELECT c.id, c.renew_date, c.status, c.reminders, u.name
@@ -72,7 +73,8 @@ export function issueRenewalReminders(providerId: number) {
      WHERE u.provider_id = ?`,
     providerId,
   );
-  let created = 0;
+  let emailed = 0;
+  let failed = 0;
   for (const line of lines) {
     if (!line.reminders) continue;
     if (line.status === "suspended" || line.status === "disconnected" || line.status === "write_off") continue;
@@ -95,18 +97,45 @@ export function issueRenewalReminders(providerId: number) {
       amount: formatInr(billed.due),
       isp: provider.name,
     };
-    const title = (stage === "soon" ? provider.reminder_soon_title : provider.reminder_due_title) || (stage === "soon" ? REMINDER_DEFAULTS.soonTitle : REMINDER_DEFAULTS.dueTitle);
-    const body = (stage === "soon" ? provider.reminder_soon_body : provider.reminder_due_body) || (stage === "soon" ? REMINDER_DEFAULTS.soonBody : REMINDER_DEFAULTS.dueBody);
+    const title = fillReminder(
+      (stage === "soon" ? provider.reminder_soon_title : provider.reminder_due_title) ||
+        (stage === "soon" ? REMINDER_DEFAULTS.soonTitle : REMINDER_DEFAULTS.dueTitle),
+      fields,
+    ).slice(0, 80);
+    const body = fillReminder(
+      (stage === "soon" ? provider.reminder_soon_body : provider.reminder_due_body) ||
+        (stage === "soon" ? REMINDER_DEFAULTS.soonBody : REMINDER_DEFAULTS.dueBody),
+      fields,
+    ).slice(0, 400);
+    if (!mailConfigured()) continue;
+    const mail = renewalMail({ ispName: provider.name, signoff: provider.name, title, body });
+    const sent = await sendMail(billed.person.email, mail.subject, mail.text, mail.html);
+    if (!sent.ok) {
+      failed += 1;
+      continue;
+    }
     run(
-      "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'portal', ?, ?)",
+      "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', ?, ?)",
       line.id,
-      fillReminder(title, fields).slice(0, 80),
-      fillReminder(body, fields).slice(0, 400),
+      title,
+      body,
       nowStamp(),
       stage,
       line.renew_date,
     );
-    created += 1;
+    emailed += 1;
   }
-  return created;
+  return { emailed, failed };
+}
+
+export async function runMorningReminders() {
+  const providers = many<{ id: number }>("SELECT id FROM providers");
+  let emailed = 0;
+  let failed = 0;
+  for (const provider of providers) {
+    const result = await issueRenewalReminders(provider.id);
+    emailed += result.emailed;
+    failed += result.failed;
+  }
+  return { emailed, failed };
 }

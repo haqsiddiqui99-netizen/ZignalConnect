@@ -80,6 +80,71 @@ export function passwordResetMail(input: { ispName?: string; signoff: string; li
   return { subject: "Set a new Zignal Connect password", text, html };
 }
 
+function letter(input: { ispName?: string; signoff: string; subject: string; text: string; blocks: string }) {
+  const isp = input.ispName?.trim();
+  const ispLine = isp
+    ? `<p style="margin:22px 0 0;color:#b85c2a;font-size:13px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">${escapeHtml(isp)}</p>`
+    : "";
+  const html = `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3efe7;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3efe7;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fffdf8;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="background:#14261e;line-height:0;">
+              <img src="cid:zignal-banner" alt="Zignal Connect" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0;" />
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 32px 32px;font-family:Georgia,Palatino,serif;color:#1c1916;">
+              ${ispLine}
+              ${input.blocks}
+              <p style="margin:28px 0 0;font-size:16px;line-height:1.4;">Best wishes,<br />${escapeHtml(input.signoff)}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  return { subject: input.subject, text: input.text, html };
+}
+
+export function welcomeMail(input: { ispName: string; email: string; password: string }) {
+  const origin = siteOrigin();
+  const text = [
+    `Welcome to ${input.ispName}.`,
+    "",
+    "Your subscriber portal is ready. Sign in with these details:",
+    `Email: ${input.email}`,
+    `Password: ${input.password}`,
+    origin,
+    "",
+    "Best wishes,",
+    input.ispName,
+  ].join("\n");
+  const blocks = `
+    <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">Welcome to ${escapeHtml(input.ispName)}.</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">Your subscriber portal is ready. Sign in with these details:</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">Email<br /><strong>${escapeHtml(input.email)}</strong></p>
+    <p style="margin:10px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">Password<br /><strong>${escapeHtml(input.password)}</strong></p>
+    <p style="margin:22px 0 0;">
+      <a href="${escapeHtml(origin)}" style="display:inline-block;background:#14261e;color:#f6f1e8;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;text-decoration:none;padding:12px 22px;border-radius:999px;">Sign in</a>
+    </p>`;
+  return letter({ ispName: input.ispName, signoff: input.ispName, subject: `Welcome to ${input.ispName}`, text, blocks });
+}
+
+export function renewalMail(input: { ispName: string; signoff: string; title: string; body: string }) {
+  const text = [input.title, "", input.body, "", "Best wishes,", input.signoff].join("\n");
+  const blocks = `
+    <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">${escapeHtml(input.title)}</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">${escapeHtml(input.body)}</p>`;
+  return letter({ ispName: input.ispName, signoff: input.signoff, subject: input.title, text, blocks });
+}
+
 export async function sendMail(
   to: string,
   subject: string,

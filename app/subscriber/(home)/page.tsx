@@ -123,7 +123,7 @@ export default async function PortalHome({
           </div>
           {allows(session.productPlan, "renewalReminders") && person.reminders ? (
             <p className="fine">
-              A reminder is posted here 3 days before the due date and on the due date, using the wording your provider saved. A bill that is already paid does not get one. These stay on this page until a mail or SMS account is connected.
+              An email goes out 3 days before the due date and on the due date, using the wording your provider saved. A copy stays on this page. A bill that is already paid does not get one.
             </p>
           ) : null}
           {reminders.length > 0 ? (

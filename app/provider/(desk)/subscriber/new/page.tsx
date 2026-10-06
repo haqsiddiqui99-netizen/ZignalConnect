@@ -2,7 +2,6 @@ import Link from "next/link";
 import { SubscriberForm } from "@/components/subscriber-form";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { DEMO_CUSTOMER_PASSWORD } from "@/lib/demo";
 import { allows } from "@/lib/entitlements";
 import { listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
 
@@ -42,7 +41,7 @@ export default async function NewCustomerPage({
             </Link>
             <h1>Add a subscriber</h1>
           </div>
-          <p>This creates the service record and a portal login. The starting password is {DEMO_CUSTOMER_PASSWORD}.</p>
+          <p>This creates the service record and a portal login. A welcome email carries their sign-in email and a private password.</p>
         </div>
         <Link className="btn" href="/provider/import">
           Import Subscribers

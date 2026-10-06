@@ -1,5 +1,12 @@
 import crypto from "crypto";
 
+const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+export function newSubscriberPassword() {
+  const bytes = crypto.randomBytes(10);
+  return Array.from(bytes, (byte) => PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length]).join("");
+}
+
 export function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(password, salt, 32).toString("hex");

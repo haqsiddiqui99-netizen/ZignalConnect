@@ -2,7 +2,6 @@ import { logout } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { CATALOG } from "@/lib/entitlements";
 import { listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
-import { issueRenewalReminders } from "@/lib/renewals";
 import { AdminNav } from "@/components/admin-nav";
 import { BrandMark } from "@/components/brand-mark";
 import { DeskChat } from "@/components/desk-chat";
@@ -10,7 +9,6 @@ import { SubmitButton } from "@/components/submit-button";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("admin");
-  issueRenewalReminders(session.providerId);
   const plans = listPlans(session.providerId);
   const charges = listChargeCatalogue(session.providerId);
   const discounts = listDiscountCatalogue(session.providerId);

@@ -41,7 +41,7 @@ function answersFor(catalogue: {
     },
     {
       question: "Add a subscriber",
-      text: "Add a subscriber from the Subscribers page. You need a name, portal email, 10-digit mobile, 6-digit PIN, address, and a plan. That creates the line and the portal login. The starting password is welcome123.",
+      text: "Add a subscriber from the Subscribers page. You need a name, portal email, 10-digit mobile, 6-digit PIN, address, and a plan. That creates the line and the portal login. A welcome email carries their sign-in email and a private password.",
       href: "/provider/subscriber/new",
       label: "Add a subscriber",
     },
