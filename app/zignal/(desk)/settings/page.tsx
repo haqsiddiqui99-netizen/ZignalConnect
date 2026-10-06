@@ -1,8 +1,9 @@
-import { changeOperatorPassword, saveOperatorSettings, savePlatformProfile } from "@/lib/actions";
+import { changeOperatorPassword, retirePlanCoupon, saveOperatorSettings, savePlanCoupon, savePlatformProfile } from "@/lib/actions";
 import { requireOperator } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
-import { getPlatformProfile } from "@/lib/queries";
+import { formatInr } from "@/lib/format";
+import { getPlatformProfile, listPlanCoupons } from "@/lib/queries";
 import { INDIAN_STATES } from "@/lib/tax";
 
 export const metadata = { title: "Settings" };
@@ -15,6 +16,7 @@ export default async function OperatorSettings({
   const session = await requireOperator();
   const query = await searchParams;
   const company = getPlatformProfile();
+  const coupons = listPlanCoupons();
 
   return (
     <>
@@ -112,6 +114,53 @@ export default async function OperatorSettings({
           </div>
           <SubmitButton className="btn small">Save receipt details</SubmitButton>
         </form>
+      </article>
+      <article className="card" style={{ marginTop: 14, maxWidth: 720 }}>
+        <h2>Desk promo codes</h2>
+        <p className="fine" style={{ marginBottom: 12 }}>
+          A provider can enter one of these on the plan payment page. The code lowers the amount they pay.
+        </p>
+        <form action={savePlanCoupon} className="stack">
+          <div className="row-2">
+            <label className="field">
+              <span>Code</span>
+              <input name="code" required minLength={3} maxLength={20} placeholder="WELCOME10" />
+            </label>
+            <label className="field">
+              <span>Discount</span>
+              <input name="value" type="number" min={1} required placeholder="10" />
+            </label>
+          </div>
+          <label className="field">
+            <span>Kind</span>
+            <select name="mode" defaultValue="percent">
+              <option value="percent">Percent off</option>
+              <option value="amount">Rupees off</option>
+            </select>
+          </label>
+          <SubmitButton className="btn small">Add promo</SubmitButton>
+        </form>
+        {coupons.length > 0 ? (
+          <div className="list" style={{ marginTop: 16 }}>
+            {coupons.map((coupon) => (
+              <div key={coupon.id} className="reminder">
+                <strong>{coupon.code}</strong>
+                <span className="fine">
+                  {coupon.mode === "percent" ? `${coupon.value}% off` : `${formatInr(coupon.value)} off`}
+                  {coupon.active ? "" : " · off"}
+                </span>
+                {coupon.active ? (
+                  <form action={retirePlanCoupon}>
+                    <input type="hidden" name="coupon_id" value={coupon.id} />
+                    <button className="promo-toggle" type="submit">
+                      Turn off
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </article>
     </>
   );

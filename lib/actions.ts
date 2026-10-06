@@ -46,14 +46,15 @@ import {
   type BillCycle,
 } from "@/lib/bill-cycle";
 import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax";
-import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, type UpgradeOrder } from "@/lib/checkout";
+import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
+import { readGatewayPayment } from "@/lib/pay-instrument";
 import { syncDeskOverflow } from "@/lib/receipts";
 import { postOnboardingMessage } from "@/lib/renewals";
 import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
-import { getPlatformProfile, getSubscriber, getSubscriberByUserId, getUsage, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
+import { findCataloguePromo, findPlanCoupon, getPlatformProfile, getSubscriber, getSubscriberByUserId, getUsage, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
@@ -1084,18 +1085,15 @@ export async function payBill(formData: FormData) {
   const current = getSubscriberByUserId(session.uid);
   if (!current) go("/subscriber", { error: "No service line is linked to this login." });
 
-  const method = readText(formData, "method");
-  const detail = readText(formData, "detail");
-  if (!["UPI", "Card", "Net banking"].includes(method)) {
-    go("/subscriber/pay", { error: "Choose how you want to pay." });
-  }
-  if (detail.length > 80) go("/subscriber/pay", { error: "Keep the payer reference short." });
+  const promoCode = readText(formData, "promo");
+  const instrument = readGatewayPayment(formData);
+  if (!instrument.ok) go("/subscriber/pay", { promo: promoCode, error: instrument.error });
+  const { payment } = instrument;
 
   const today = todayISO();
   const periodEnd = nextRenewalDate(current.renew_date, today, current.bill_cycle);
   const periodStart = current.renew_date > today ? current.renew_date : today;
   const reference = makeRef();
-  const note = detail ? `Payer reference: ${detail}` : "Paid from the subscriber portal";
   const charges = listCustomerCharges(current.id);
   const discounts = listCustomerDiscounts(current.id);
   const extraPlans = listCustomerExtraPlans(current.id);
@@ -1105,10 +1103,31 @@ export async function payBill(formData: FormData) {
   });
   const due = built.due;
   if (due <= 0) go("/subscriber/pay", { error: "Nothing is due on this line." });
-  const lineItems = JSON.stringify(built.lines);
+  let promoName = "";
+  let off = 0;
+  if (promoCode) {
+    const promo = findCataloguePromo(session.providerId, promoCode);
+    if (!promo || (promo.mode !== "amount" && promo.mode !== "percent")) {
+      go("/subscriber/pay", { error: "That promo code is not on this connection." });
+    }
+    if (discounts.some((discount) => discount.name.toLowerCase() === promo.name.toLowerCase())) {
+      go("/subscriber/pay", { error: "That promo is already on this bill." });
+    }
+    promoName = promo.name;
+    off = promoOff(due, promo.mode, promo.value);
+  }
+  const payable = Math.max(0, due - off);
+  const note = [payment.detail ? `Payer reference: ${payment.detail}` : "Paid from the subscriber portal", promoName ? `Promo ${promoName}` : ""]
+    .filter(Boolean)
+    .join(". ");
+  const lineItems = JSON.stringify(
+    off > 0 ? [...built.lines, { description: `${promoName} promo`, amount: -off }] : built.lines,
+  );
 
-  const result = collectSubscriberPayment(current.id, { method, detail, amount: due });
-  if (!result.ok) go("/subscriber/pay", { notice: "gateway" });
+  if (payable > 0) {
+    const result = collectSubscriberPayment(current.id, { ...payment, amount: payable });
+    if (!result.ok) go("/subscriber/pay", { promo: promoName, notice: "gateway" });
+  }
 
   const db = getDb();
   let paymentId = 0;
@@ -1119,8 +1138,8 @@ export async function payBill(formData: FormData) {
         (customer_id, amount, method, reference, paid_at, period_start, period_end, note, kind, line_items)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'full', ?)`,
       current.id,
-      due,
-      method,
+      payable,
+      payable === 0 ? "Promo" : payment.method,
       reference,
       nowStamp(),
       periodStart,
@@ -2414,6 +2433,80 @@ export async function openUpgradeCheckout(formData: FormData) {
   redirect(`/provider/upgrade/pay/${Number(inserted.lastInsertRowid)}`);
 }
 
+export async function applyUpgradePromo(formData: FormData) {
+  const session = await requireRole("admin");
+  const id = Number(readText(formData, "order_id"));
+  const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", id);
+  if (!order || order.provider_id !== session.providerId) go("/provider/upgrade", { error: "That payment was not found." });
+  if (!session.isOwner) go(`/provider/upgrade/pay/${id}/checkout`, { error: "Only the desk owner can pay for a plan." });
+  if (order.status === "paid") redirect("/provider/upgrade");
+  const coupon = findPlanCoupon(readText(formData, "promo"));
+  if (!coupon) go(`/provider/upgrade/pay/${id}/checkout`, { error: "That promo code is not active." });
+  const off = promoOff(order.total, coupon.mode, coupon.value);
+  run("UPDATE upgrade_orders SET promo_code = ?, promo_off = ? WHERE id = ?", coupon.code, off, order.id);
+  refresh();
+  go(`/provider/upgrade/pay/${id}/checkout`, { notice: `Promo ${coupon.code} takes ${formatInr(off)} off this payment.` });
+}
+
+export async function clearUpgradePromo(formData: FormData) {
+  const session = await requireRole("admin");
+  const id = Number(readText(formData, "order_id"));
+  const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", id);
+  if (!order || order.provider_id !== session.providerId || !session.isOwner) go("/provider/upgrade", { error: "That payment was not found." });
+  run("UPDATE upgrade_orders SET promo_code = '', promo_off = 0 WHERE id = ?", order.id);
+  refresh();
+  redirect(`/provider/upgrade/pay/${id}/checkout`);
+}
+
+export async function applySubscriberPromo(formData: FormData) {
+  const session = await requireRole("customer");
+  if (!allows(session.productPlan, "onlinePay")) go("/subscriber/pay", { error: "Online renewal is not on this desk plan. Pay the office for now." });
+  const current = getSubscriberByUserId(session.uid);
+  if (!current) go("/subscriber", { error: "No service line is linked to this login." });
+  const promo = findCataloguePromo(session.providerId, readText(formData, "promo"));
+  if (!promo || (promo.mode !== "amount" && promo.mode !== "percent")) {
+    go("/subscriber/pay", { error: "That promo code is not on this connection." });
+  }
+  const already = listCustomerDiscounts(current.id).some((discount) => discount.name.toLowerCase() === promo.name.toLowerCase());
+  if (already) go("/subscriber/pay", { error: "That promo is already on this bill." });
+  go("/subscriber/pay", { promo: promo.name, notice: `Promo ${promo.name} is ready on this payment.` });
+}
+
+export async function savePlanCoupon(formData: FormData) {
+  await requireOperator();
+  const code = readText(formData, "code").toUpperCase().replace(/\s+/g, "");
+  const mode = readText(formData, "mode");
+  const value = Number(formData.get("value"));
+  if (!/^[A-Z0-9]{3,20}$/.test(code)) go("/zignal/settings", { error: "Use 3 to 20 letters or numbers for the promo code." });
+  if (mode !== "amount" && mode !== "percent") go("/zignal/settings", { error: "Choose rupees or percent." });
+  if (mode === "percent" && (!Number.isInteger(value) || value < 1 || value > 100)) {
+    go("/zignal/settings", { error: "A percent promo is a whole number from 1 to 100." });
+  }
+  if (mode === "amount" && (!Number.isInteger(value) || value < 1)) {
+    go("/zignal/settings", { error: "Enter the promo in whole rupees." });
+  }
+  if (one("SELECT id FROM plan_coupons WHERE lower(code) = ?", code.toLowerCase())) {
+    go("/zignal/settings", { error: "That promo code already exists." });
+  }
+  run(
+    "INSERT INTO plan_coupons (code, mode, value, active, created_at) VALUES (?, ?, ?, 1, ?)",
+    code,
+    mode,
+    value,
+    nowStamp(),
+  );
+  refresh();
+  go("/zignal/settings", { notice: `Promo ${code} is ready for a desk payment.` });
+}
+
+export async function retirePlanCoupon(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("coupon_id"));
+  run("UPDATE plan_coupons SET active = 0 WHERE id = ?", id);
+  refresh();
+  go("/zignal/settings", { notice: "Promo turned off." });
+}
+
 export async function payUpgrade(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(readText(formData, "order_id"));
@@ -2421,13 +2514,13 @@ export async function payUpgrade(formData: FormData) {
   if (!order || order.provider_id !== session.providerId) go("/provider/upgrade", { error: "That payment was not found." });
   if (!session.isOwner) go(`/provider/upgrade/pay/${id}`, { error: "Only the desk owner can pay for a plan." });
   if (order.status === "paid") redirect("/provider/upgrade?notice=Plan%20updated.");
-  const method = readText(formData, "method");
-  const detail = readText(formData, "detail");
-  if (!["UPI", "Card", "Net banking"].includes(method)) {
-    go(`/provider/upgrade/pay/${id}/checkout`, { error: "Choose how you want to pay." });
+  const instrument = readGatewayPayment(formData);
+  if (!instrument.ok) go(`/provider/upgrade/pay/${id}/checkout`, { error: instrument.error });
+  const payable = orderPayable(order);
+  if (payable > 0) {
+    const result = collectUpgradePayment(order.id, instrument.payment);
+    if (!result.ok) redirect(`/provider/upgrade/pay/${id}/checkout?notice=gateway`);
   }
-  const result = collectUpgradePayment(order.id, { method, detail });
-  if (!result.ok) redirect(`/provider/upgrade/pay/${id}/checkout?notice=gateway`);
   markUpgradePaid(order.id);
   refresh();
   redirect("/provider/upgrade?notice=Plan%20updated.");

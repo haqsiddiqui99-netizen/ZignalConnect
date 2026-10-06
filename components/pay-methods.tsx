@@ -1,37 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import { PREFERRED_BANKS, cardBrand } from "@/lib/pay-instrument";
 
 const methods = [
   {
     value: "UPI",
     title: "UPI",
     detail: "GPay, PhonePe, Paytm, or any UPI ID",
-    field: "UPI ID",
-    placeholder: "name@okhdfcbank",
     mark: "upi",
   },
   {
     value: "Card",
     title: "Debit or credit card",
     detail: "Visa, Mastercard, or RuPay",
-    field: "Card last 4 digits",
-    placeholder: "4242",
     mark: "card",
   },
   {
     value: "Net banking",
     title: "Net banking",
     detail: "Pay from your bank account",
-    field: "Bank reference",
-    placeholder: "HDFC or transfer reference",
     mark: "bank",
   },
 ] as const;
 
 export function PayMethods() {
   const [method, setMethod] = useState<(typeof methods)[number]["value"]>("UPI");
-  const chosen = methods.find((item) => item.value === method) ?? methods[0];
 
   return (
     <>
@@ -56,11 +50,116 @@ export function PayMethods() {
           </label>
         ))}
       </div>
-      <label className="field">
-        <span>{chosen.field} (optional)</span>
-        <input name="detail" placeholder={chosen.placeholder} autoComplete="off" />
-      </label>
+      {method === "UPI" ? <UpiFields /> : null}
+      {method === "Card" ? <CardFields /> : null}
+      {method === "Net banking" ? <BankFields /> : null}
     </>
+  );
+}
+
+function UpiFields() {
+  return (
+    <label className="field pay-field">
+      <span>UPI ID (optional)</span>
+      <input name="upi" placeholder="name@okhdfcbank" autoComplete="off" inputMode="email" />
+    </label>
+  );
+}
+
+function CardFields() {
+  const [holder, setHolder] = useState("");
+  const [number, setNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const brand = cardBrand(number);
+
+  return (
+    <div className="pay-sheet">
+      <label className="field pay-field">
+        <span>Name on card</span>
+        <input
+          name="card_name"
+          value={holder}
+          autoComplete="cc-name"
+          placeholder="As printed on the card"
+          required
+          onChange={(event) => setHolder(event.target.value)}
+        />
+      </label>
+      <label className="field pay-field">
+        <span>Card number{brand ? ` · ${brand}` : ""}</span>
+        <input
+          name="card_number"
+          value={number}
+          inputMode="numeric"
+          autoComplete="cc-number"
+          placeholder="1234 5678 9012 3456"
+          required
+          onChange={(event) => {
+            const next = event.target.value.replace(/\D/g, "").slice(0, 19);
+            setNumber((next.match(/.{1,4}/g) ?? []).join(" "));
+          }}
+        />
+      </label>
+      <div className="pay-pair">
+        <label className="field pay-field">
+          <span>Expiry</span>
+          <input
+            name="card_expiry"
+            value={expiry}
+            inputMode="numeric"
+            autoComplete="cc-exp"
+            placeholder="MM/YY"
+            required
+            onChange={(event) => {
+              const next = event.target.value.replace(/\D/g, "").slice(0, 4);
+              setExpiry(next.length > 2 ? `${next.slice(0, 2)}/${next.slice(2)}` : next);
+            }}
+          />
+        </label>
+        <label className="field pay-field">
+          <span>CVV</span>
+          <input
+            name="card_cvv"
+            value={cvv}
+            inputMode="numeric"
+            autoComplete="cc-csc"
+            placeholder={brand === "Amex" ? "1234" : "123"}
+            required
+            onChange={(event) => setCvv(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          />
+        </label>
+      </div>
+      <p className="fine">The card number and security code are not saved on this desk. They are only for the payment gateway.</p>
+    </div>
+  );
+}
+
+function BankFields() {
+  const [bank, setBank] = useState("");
+  return (
+    <div className="pay-sheet">
+      <label className="field pay-field">
+        <span>Preferred bank</span>
+        <select name="bank" value={bank} required onChange={(event) => setBank(event.target.value)}>
+          <option value="" disabled>
+            Choose a bank
+          </option>
+          {PREFERRED_BANKS.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+          <option value="Other">Other bank</option>
+        </select>
+      </label>
+      {bank === "Other" ? (
+        <label className="field pay-field">
+          <span>Bank name</span>
+          <input name="bank_other" placeholder="Enter the bank name" autoComplete="off" required />
+        </label>
+      ) : null}
+    </div>
   );
 }
 

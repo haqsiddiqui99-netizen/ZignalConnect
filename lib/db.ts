@@ -400,6 +400,10 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (orderColumns.size > 0 && !orderColumns.has("billing_term")) {
     db.exec("ALTER TABLE upgrade_orders ADD COLUMN billing_term TEXT NOT NULL DEFAULT 'monthly'");
   }
+  if (orderColumns.size > 0 && !orderColumns.has("promo_code")) {
+    db.exec("ALTER TABLE upgrade_orders ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''");
+    db.exec("ALTER TABLE upgrade_orders ADD COLUMN promo_off INTEGER NOT NULL DEFAULT 0");
+  }
 
   const batchColumns = columnNames(db, "import_batches");
   if (batchColumns.size > 0 && !batchColumns.has("kind")) {
@@ -577,7 +581,17 @@ function ensureReceiptSchema(db: DatabaseSync) {
       status TEXT NOT NULL CHECK(status IN ('pending', 'paid')) DEFAULT 'pending',
       created_at TEXT NOT NULL,
       paid_at TEXT NOT NULL DEFAULT '',
-      billing_term TEXT NOT NULL DEFAULT 'monthly'
+      billing_term TEXT NOT NULL DEFAULT 'monthly',
+      promo_code TEXT NOT NULL DEFAULT '',
+      promo_off INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS plan_coupons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      mode TEXT NOT NULL CHECK(mode IN ('amount', 'percent')),
+      value INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
     );
   `);
 }

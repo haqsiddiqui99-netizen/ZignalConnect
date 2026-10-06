@@ -287,6 +287,33 @@ export function listDiscountCatalogue(providerId: number) {
   );
 }
 
+export type PlanCoupon = {
+  id: number;
+  code: string;
+  mode: "amount" | "percent";
+  value: number;
+  active: number;
+};
+
+export function listPlanCoupons() {
+  return many<PlanCoupon>("SELECT id, code, mode, value, active FROM plan_coupons ORDER BY code");
+}
+
+export function findPlanCoupon(code: string) {
+  return one<PlanCoupon>(
+    "SELECT id, code, mode, value, active FROM plan_coupons WHERE lower(code) = ? AND active = 1",
+    code.trim().toLowerCase(),
+  );
+}
+
+export function findCataloguePromo(providerId: number, code: string) {
+  return one<DiscountCatalogueItem>(
+    "SELECT id, name, applies_to, frequency, mode, value FROM discount_catalogue WHERE provider_id = ? AND lower(name) = ?",
+    providerId,
+    code.trim().toLowerCase(),
+  );
+}
+
 export function listPlans(providerId: number) {
   return many<Plan>(
     `SELECT p.*, (SELECT COUNT(*) FROM customers c WHERE c.plan_id = p.id) AS subscribers
