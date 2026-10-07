@@ -2,7 +2,7 @@ import Link from "next/link";
 import {
   deleteCustomerCharge,
   deleteCustomerDiscount,
-  deleteExtraPlan,
+  disconnectExtraPlan,
   recordPayment,
   saveCustomerCharge,
   saveCustomerDiscount,
@@ -10,10 +10,11 @@ import {
   saveSubscriberPlan,
   updatePaymentDetails,
 } from "@/lib/actions";
-import { BILL_CYCLES, billCycleLabel } from "@/lib/bill-cycle";
+import { BILL_CYCLES, billCycleLabel, cycleAmount, incompleteCycleCharge } from "@/lib/bill-cycle";
 import { invoiceFor } from "@/lib/charges";
-import { formatDate, formatInr, formatStamp, isDate } from "@/lib/format";
+import { formatDate, formatInr, formatStamp, isDate, todayISO } from "@/lib/format";
 import type { CustomerCharge, CustomerDiscount, CustomerExtraPlan, Payment, Subscriber } from "@/lib/queries";
+import { PlanTerm } from "@/components/plan-term";
 import { SubmitButton } from "@/components/submit-button";
 
 type PlanOption = { id: number; name: string; speed_mbps: number; price: number };
@@ -141,11 +142,68 @@ function PlanPicker({ plans, planId, customName }: { plans: PlanOption[]; planId
   );
 }
 
-function LineLinks({ href, editing }: { href: string; editing: boolean }) {
+function DisconnectPlan({ person, plan, cancelHref }: { person: Subscriber; plan: CustomerExtraPlan; cancelHref: string }) {
+  const activated = isDate(plan.activated_on) ? plan.activated_on : person.installation_date;
+  const renews = isDate(plan.renews_on) ? plan.renews_on : person.renew_date;
+  const amount = plan.amount > 0 ? plan.amount : cycleAmount(plan.price, plan.bill_cycle);
+  const quote = incompleteCycleCharge(activated, renews, todayISO(), amount);
+  const started = todayISO() >= activated;
+  const taxNote = plan.tax_included === 0 && plan.tax_percent > 0 ? ` Tax of ${plan.tax_percent}% is added on the invoice.` : "";
+
+  return (
+    <form action={disconnectExtraPlan} className="disconnect-panel stack">
+      <input type="hidden" name="customer_id" value={person.id} />
+      <input type="hidden" name="extra_id" value={plan.id} />
+      <h3>Disconnect {plan.plan_name}</h3>
+      {quote.incomplete ? (
+        <>
+          <p className="fine">
+            This cycle runs {formatDate(activated)} to {formatDate(renews)}. {quote.usedDays} of {quote.cycleDays} days have passed.
+            {taxNote}
+          </p>
+          <div className="settle-list">
+            <label>
+              <input type="radio" name="settlement" value="full" defaultChecked />
+              <span>Charge the full amount for this incomplete cycle</span>
+              <strong>{formatInr(quote.full)}</strong>
+            </label>
+            <label>
+              <input type="radio" name="settlement" value="none" />
+              <span>Charge nothing for this incomplete cycle</span>
+              <strong>{formatInr(0)}</strong>
+            </label>
+            <label>
+              <input type="radio" name="settlement" value="prorate" />
+              <span>Charge a prorated amount for this incomplete cycle</span>
+              <strong>{formatInr(quote.prorate)}</strong>
+            </label>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="fine">
+            {started
+              ? `This cycle ended on ${formatDate(renews)}. The full ${formatInr(quote.full)} stays on the open invoice, and the plan will not renew.`
+              : "This plan has not started. Disconnecting removes it, and nothing is added to the invoice."}
+          </p>
+          <input type="hidden" name="settlement" value={started ? "full" : "none"} />
+        </>
+      )}
+      <div className="demo-row">
+        <SubmitButton pendingLabel="Disconnecting…">Disconnect</SubmitButton>
+        <Link className="btn" href={cancelHref}>
+          Cancel
+        </Link>
+      </div>
+    </form>
+  );
+}
+
+function LineLinks({ href, editing, label = "Edit" }: { href: string; editing: boolean; label?: string }) {
   return editing ? (
     <Link href={href.replace(/&line=[^&]+/, "")}>Close</Link>
   ) : (
-    <Link href={href}>Edit</Link>
+    <Link href={href}>{label}</Link>
   );
 }
 
@@ -159,6 +217,8 @@ export function SubscriberBilling({
   extraPlans,
   payments,
   line,
+  part = "invoice",
+  view = "open",
 }: {
   person: Subscriber;
   plans: PlanOption[];
@@ -169,20 +229,31 @@ export function SubscriberBilling({
   extraPlans: CustomerExtraPlan[];
   payments: Payment[];
   line: string;
+  part?: "invoice" | "payment" | "plans";
+  view?: "open" | "closed";
 }) {
-  const base = `/provider/subscriber/${person.id}?tab=billing`;
+  const base = `/provider/subscriber/${person.id}?tab=${part}`;
   const bill = invoiceFor(person, charges, { discounts, extraPlans });
   const openCharges = charges.filter((charge) => charge.frequency !== "once" || !charge.billed);
   const billedCharges = charges.filter((charge) => charge.frequency === "once" && charge.billed);
+  const closedInvoices = payments.filter((payment) => payment.kind !== "partial");
   const planCycle = person.plan_cycle || person.bill_cycle;
   const planAmount = person.plan_amount > 0 ? person.plan_amount : person.price;
+  const today = todayISO();
+  const invoiceNote =
+    isDate(person.renew_date) && person.renew_date < today
+      ? "Payment is overdue."
+      : isDate(person.renew_date) && person.renew_date > today
+        ? "Renewal date is still ahead."
+        : "This invoice is still open.";
 
   return (
     <div className="stack">
+      {part === "invoice" && view !== "closed" ? (
       <article className="card">
-        <h2>Open bill</h2>
+        <h2>Open invoice</h2>
         <p className="fine" style={{ margin: "8px 0 12px" }}>
-          These lines are not on a receipt yet. The amount due is {formatInr(bill.due)}.
+          {invoiceNote} These lines are not on a receipt yet. The amount due is {formatInr(bill.due)}.
         </p>
         {bill.lines.length === 0 ? (
           <p>Nothing is waiting on the next bill.</p>
@@ -239,7 +310,53 @@ export function SubscriberBilling({
           <SubmitButton pendingLabel="Recording…">Record payment</SubmitButton>
         </form>
       </article>
-
+      ) : null}
+      {part === "invoice" && view === "closed" ? (
+      <article className="card">
+        <h2>Closed invoices</h2>
+        <p className="fine" style={{ margin: "8px 0 12px" }}>
+          A closed invoice is a full payment that already has a receipt.
+        </p>
+        {closedInvoices.length === 0 ? (
+          <p>No closed invoices yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Method</th>
+                  <th className="num">Amount</th>
+                  <th>Period</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {closedInvoices.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>
+                      {formatStamp(payment.paid_at)}
+                      <div className="fine">{payment.reference}</div>
+                    </td>
+                    <td>{payment.method}</td>
+                    <td className="num">{formatInr(payment.amount)}</td>
+                    <td>
+                      {showDate(payment.period_start)} to {showDate(payment.period_end)}
+                      {payment.note ? <div className="fine">{payment.note}</div> : null}
+                    </td>
+                    <td>
+                      <Link href={`/provider/receipt/income/${payment.id}`}>Receipt</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+      ) : null}
+      {part === "plans" ? (
+      <>
       <article className="card">
         <h2>Internet plans</h2>
         <div className="table-wrap">
@@ -267,9 +384,36 @@ export function SubscriberBilling({
                 <td>{showDate(person.installation_date)}</td>
                 <td>{showDate(person.renew_date)}</td>
                 <td>
-                  <LineLinks href={`${base}&line=plan`} editing={line === "plan"} />
+                  <LineLinks href={`${base}&line=plan`} editing={line === "plan"} label="Change Plan" />
                 </td>
               </tr>
+              {line === "plan" ? (
+                <tr>
+                  <td className="plan-edit" colSpan={7}>
+                    <form action={saveSubscriberPlan} className="stack">
+                      <input type="hidden" name="customer_id" value={person.id} />
+                      <div className="row-2">
+                        <PlanPicker plans={plans} planId={person.plan_label ? "__custom__" : String(person.plan_id)} customName={person.plan_label} />
+                      </div>
+                      <PlanTerm
+                        frequency={planCycle}
+                        activated={person.installation_date}
+                        amount={
+                          <label className="field">
+                            <span>Amount (₹)</span>
+                            <input name="amount" type="number" min={1} step={1} required defaultValue={planAmount} />
+                          </label>
+                        }
+                      >
+                        <div className="row-2">
+                          <TaxFields included={person.plan_tax_included} percent={person.plan_tax_percent} />
+                        </div>
+                      </PlanTerm>
+                      <SubmitButton pendingLabel="Saving…">Save internet plan</SubmitButton>
+                    </form>
+                  </td>
+                </tr>
+              ) : null}
               {extraPlans.map((plan) => (
                 <tr key={plan.id}>
                   <td>{plan.plan_name}</td>
@@ -280,12 +424,10 @@ export function SubscriberBilling({
                   <td>{showDate(plan.renews_on || person.renew_date)}</td>
                   <td>
                     <div className="demo-row">
-                      <LineLinks href={`${base}&line=extra-${plan.id}`} editing={line === `extra-${plan.id}`} />
-                      <form action={deleteExtraPlan}>
-                        <input type="hidden" name="customer_id" value={person.id} />
-                        <input type="hidden" name="extra_id" value={plan.id} />
-                        <SubmitButton className="btn small">Delete</SubmitButton>
-                      </form>
+                      <LineLinks href={`${base}&line=extra-${plan.id}`} editing={line === `extra-${plan.id}`} label="Change Plan" />
+                      {line === `disconnect-${plan.id}` ? null : (
+                        <Link href={`${base}&line=disconnect-${plan.id}`}>Disconnect</Link>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -293,35 +435,11 @@ export function SubscriberBilling({
             </tbody>
           </table>
         </div>
-        {line === "plan" ? (
-          <form action={saveSubscriberPlan} className="stack" style={{ marginTop: 16 }}>
-            <input type="hidden" name="customer_id" value={person.id} />
-            <div className="row-2">
-              <PlanPicker plans={plans} planId={person.plan_label ? "__custom__" : String(person.plan_id)} customName={person.plan_label} />
-            </div>
-            <div className="row-2">
-              <label className="field">
-                <span>Frequency</span>
-                <select name="frequency" defaultValue={planCycle}>
-                  {BILL_CYCLES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Amount (₹)</span>
-                <input name="amount" type="number" min={1} step={1} required defaultValue={planAmount} />
-              </label>
-            </div>
-            <div className="row-2">
-              <TaxFields included={person.plan_tax_included} percent={person.plan_tax_percent} />
-            </div>
-            <DateFields activated={person.installation_date} renews={person.renew_date} />
-            <SubmitButton pendingLabel="Saving…">Save internet plan</SubmitButton>
-          </form>
-        ) : null}
+        {extraPlans.map((plan) =>
+          line === `disconnect-${plan.id}` ? (
+            <DisconnectPlan key={`disconnect-${plan.id}`} person={person} plan={plan} cancelHref={base} />
+          ) : null,
+        )}
         {extraPlans.map((plan) =>
           line === `extra-${plan.id}` ? (
             <form key={plan.id} action={saveExtraPlan} className="stack" style={{ marginTop: 16 }}>
@@ -330,58 +448,48 @@ export function SubscriberBilling({
               <div className="row-2">
                 <PlanPicker plans={plans} planId={plan.label ? "__custom__" : String(plan.plan_id)} customName={plan.label} />
               </div>
-              <div className="row-2">
-                <label className="field">
-                  <span>Frequency</span>
-                  <select name="frequency" defaultValue={plan.bill_cycle}>
-                    {BILL_CYCLES.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Amount (₹)</span>
-                  <input name="amount" type="number" min={1} step={1} required defaultValue={plan.amount > 0 ? plan.amount : plan.price} />
-                </label>
-              </div>
-              <div className="row-2">
-                <TaxFields included={plan.tax_included} percent={plan.tax_percent} />
-              </div>
-              <DateFields activated={plan.activated_on || person.installation_date} renews={plan.renews_on || person.renew_date} />
+              <PlanTerm
+                frequency={plan.bill_cycle}
+                activated={plan.activated_on || person.installation_date}
+                amount={
+                  <label className="field">
+                    <span>Amount (₹)</span>
+                    <input name="amount" type="number" min={1} step={1} required defaultValue={plan.amount > 0 ? plan.amount : plan.price} />
+                  </label>
+                }
+              >
+                <div className="row-2">
+                  <TaxFields included={plan.tax_included} percent={plan.tax_percent} />
+                </div>
+              </PlanTerm>
               <SubmitButton pendingLabel="Saving…">Save internet plan</SubmitButton>
             </form>
           ) : null,
         )}
-        <form action={saveExtraPlan} className="stack" style={{ marginTop: 16 }}>
-          <h3>Add internet plan</h3>
-          <input type="hidden" name="customer_id" value={person.id} />
-          <div className="row-2">
-            <PlanPicker plans={plans} planId={String(plans[0]?.id ?? "__custom__")} customName="" />
-          </div>
-          <div className="row-2">
-            <label className="field">
-              <span>Frequency</span>
-              <select name="frequency" defaultValue="monthly">
-                {BILL_CYCLES.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Amount (₹)</span>
-              <input name="amount" type="number" min={1} step={1} required placeholder="699" />
-            </label>
-          </div>
-          <div className="row-2">
-            <TaxFields included={1} percent={0} />
-          </div>
-          <DateFields activated={person.installation_date} renews={person.renew_date} />
-          <SubmitButton pendingLabel="Adding…">Add internet plan</SubmitButton>
-        </form>
+        <details className="add-fold" {...(line === "add-plan" ? { open: true } : {})}>
+          <summary>Add internet plan</summary>
+          <form action={saveExtraPlan} className="stack">
+            <input type="hidden" name="customer_id" value={person.id} />
+            <div className="row-2">
+              <PlanPicker plans={plans} planId={String(plans[0]?.id ?? "__custom__")} customName="" />
+            </div>
+            <PlanTerm
+              frequency="monthly"
+              activated={person.installation_date}
+              amount={
+                <label className="field">
+                  <span>Amount (₹)</span>
+                  <input name="amount" type="number" min={1} step={1} required placeholder="699" />
+                </label>
+              }
+            >
+              <div className="row-2">
+                <TaxFields included={1} percent={0} />
+              </div>
+            </PlanTerm>
+            <SubmitButton pendingLabel="Adding…">Add internet plan</SubmitButton>
+          </form>
+        </details>
       </article>
 
       <article className="card">
@@ -412,8 +520,9 @@ export function SubscriberBilling({
             </form>
           ) : null,
         )}
-        <form action={saveCustomerCharge} className="stack" style={{ marginTop: 16 }}>
-          <h3>Add charge</h3>
+        <details className="add-fold" {...(line === "add-charge" ? { open: true } : {})}>
+          <summary>Add charge</summary>
+          <form action={saveCustomerCharge} className="stack">
           <input type="hidden" name="customer_id" value={person.id} />
           <div className="row-2">
             <label className="field">
@@ -445,6 +554,7 @@ export function SubscriberBilling({
           <DateFields activated={person.installation_date} />
           <SubmitButton pendingLabel="Adding…">Add charge</SubmitButton>
         </form>
+        </details>
       </article>
 
       <article className="card">
@@ -498,8 +608,9 @@ export function SubscriberBilling({
             </form>
           ) : null,
         )}
-        <form action={saveCustomerDiscount} className="stack" style={{ marginTop: 16 }}>
-          <h3>Add discount</h3>
+        <details className="add-fold" {...(line === "add-discount" ? { open: true } : {})}>
+          <summary>Add discount</summary>
+          <form action={saveCustomerDiscount} className="stack">
           <input type="hidden" name="customer_id" value={person.id} />
           <label className="field">
             <span>Catalogue promo</span>
@@ -515,8 +626,11 @@ export function SubscriberBilling({
           <DiscountFields plans={plans} name="" applies={plans[0] ? `plan:${plans[0].id}` : "invoice"} frequency="once" mode="amount" value={0} />
           <SubmitButton pendingLabel="Adding…">Add discount</SubmitButton>
         </form>
+        </details>
       </article>
-
+      </>
+      ) : null}
+      {part === "payment" ? (
       <article className="card">
         <h2>Payments</h2>
         <p className="fine" style={{ margin: "8px 0 12px" }}>
@@ -592,6 +706,7 @@ export function SubscriberBilling({
           ) : null,
         )}
       </article>
+      ) : null}
     </div>
   );
 }

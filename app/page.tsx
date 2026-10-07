@@ -84,20 +84,15 @@ export default async function LoginPage({
             </div>
           </div>
         </div>
-        <p className="fine" style={{ color: "#d9c7a4" }}>
-          Payments stay in this local ledger. Nothing is sent to a bank.
-        </p>
       </section>
       <section className="login-panel">
         <div className="panel-card">
           <h2>Sign in</h2>
-          <p className="fine">Provider staff, subscribers, and Zignal Connect use the same door. The account opens the right side.</p>
-          <div style={{ height: 16 }} />
           <Banner error={error} />
-          <form action={login} className="stack">
+          <form action={login} className="stack" style={{ marginTop: 16 }}>
             <label className="field">
               <span>Email</span>
-              <input name="email" type="email" autoComplete="username" required placeholder="you@zignal.connect" />
+              <input name="email" type="email" autoComplete="username" required />
             </label>
             <label className="field">
               <span>Password</span>

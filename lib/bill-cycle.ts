@@ -62,6 +62,22 @@ export function cycleAmount(monthlyPrice: number, value: string) {
   return monthlyPrice * cycle.months;
 }
 
+function daySpan(start: string, end: string) {
+  const [ys, ms, ds] = start.split("-").map(Number);
+  const [ye, me, de] = end.split("-").map(Number);
+  return Math.round((new Date(ye, me - 1, de).getTime() - new Date(ys, ms - 1, ds).getTime()) / 86_400_000);
+}
+
+export function incompleteCycleCharge(activated: string, renews: string, today: string, amount: number) {
+  const cycleDays = daySpan(activated, renews);
+  const valid = cycleDays > 0;
+  const incomplete = valid && today >= activated && today < renews;
+  const usedDays = !valid || today < activated ? 0 : Math.min(cycleDays, daySpan(activated, today) + 1);
+  const full = Math.max(0, amount);
+  const prorate = valid ? Math.round((full * usedDays) / cycleDays) : 0;
+  return { incomplete, cycleDays: Math.max(0, cycleDays), usedDays, full, prorate };
+}
+
 export function renewalAfterInstallation(installation: string, cycle: string) {
   const item = billCycleOf(cycle);
   if (item.days > 0) return addDays(installation, item.days);

@@ -4,43 +4,26 @@ import { useState } from "react";
 import { PREFERRED_BANKS, cardBrand } from "@/lib/pay-instrument";
 
 const methods = [
-  {
-    value: "UPI",
-    title: "UPI",
-    detail: "GPay, PhonePe, Paytm, or any UPI ID",
-    mark: "upi",
-  },
-  {
-    value: "Card",
-    title: "Debit or credit card",
-    detail: "Visa, Mastercard, or RuPay",
-    mark: "card",
-  },
-  {
-    value: "Net banking",
-    title: "Net banking",
-    detail: "Pay from your bank account",
-    mark: "bank",
-  },
+  { value: "Credit card", title: "Credit card", detail: "Visa, Mastercard, RuPay", mark: "credit" },
+  { value: "Debit card", title: "Debit card", detail: "Visa, Mastercard, RuPay", mark: "debit" },
+  { value: "UPI", title: "UPI", detail: "GPay, PhonePe, Paytm", mark: "upi" },
+  { value: "Net banking", title: "Net banking", detail: "From your bank", mark: "bank" },
+  { value: "Auto-pay", title: "Auto-pay", detail: "Saved method", mark: "auto" },
 ] as const;
 
-export function PayMethods() {
-  const [method, setMethod] = useState<(typeof methods)[number]["value"]>("UPI");
+type PayChoice = (typeof methods)[number]["value"];
+
+export function PayMethods({ saved, settingsHref }: { saved?: string; settingsHref?: string }) {
+  const [method, setMethod] = useState<PayChoice>(saved ? "Auto-pay" : "UPI");
 
   return (
     <>
-      <div className="pay-methods" role="radiogroup" aria-label="How to pay">
+      <div className="pay-methods choices" role="radiogroup" aria-label="How to pay">
         {methods.map((item) => (
           <label key={item.value} className={item.value === method ? "pay-method on" : "pay-method"}>
-            <input
-              type="radio"
-              name="method"
-              value={item.value}
-              checked={item.value === method}
-              onChange={() => setMethod(item.value)}
-            />
-            <span className={`pay-mark pay-mark-${item.mark}`} aria-hidden="true">
-              {item.mark === "upi" ? <UpiMark /> : item.mark === "card" ? <CardMark /> : <BankMark />}
+            <input type="radio" name="method" value={item.value} checked={item.value === method} onChange={() => setMethod(item.value)} />
+            <span className="pay-mark" aria-hidden="true">
+              <PayMark kind={item.mark} />
             </span>
             <span className="pay-copy">
               <strong>{item.title}</strong>
@@ -51,18 +34,21 @@ export function PayMethods() {
         ))}
       </div>
       {method === "UPI" ? <UpiFields /> : null}
-      {method === "Card" ? <CardFields /> : null}
+      {method === "Credit card" || method === "Debit card" ? <CardFields /> : null}
       {method === "Net banking" ? <BankFields /> : null}
+      {method === "Auto-pay" ? <AutoFields saved={saved} settingsHref={settingsHref} /> : null}
     </>
   );
 }
 
 function UpiFields() {
   return (
-    <label className="field pay-field">
-      <span>UPI ID (optional)</span>
-      <input name="upi" placeholder="name@okhdfcbank" autoComplete="off" inputMode="email" />
-    </label>
+    <div className="pay-sheet">
+      <label className="field pay-field">
+        <span>UPI ID (optional)</span>
+        <input name="upi" placeholder="name@okhdfcbank" autoComplete="off" inputMode="email" />
+      </label>
+    </div>
   );
 }
 
@@ -75,6 +61,7 @@ function CardFields() {
 
   return (
     <div className="pay-sheet">
+      <div className="pay-entry">
       <label className="field pay-field">
         <span>Name on card</span>
         <input
@@ -101,7 +88,6 @@ function CardFields() {
           }}
         />
       </label>
-      <div className="pay-pair">
         <label className="field pay-field">
           <span>Expiry</span>
           <input
@@ -163,6 +149,38 @@ function BankFields() {
   );
 }
 
+function AutoFields({ saved, settingsHref }: { saved?: string; settingsHref?: string }) {
+  if (!saved) {
+    return (
+      <div className="pay-sheet">
+        <p className="fine">
+          No payment method is saved yet.
+          {settingsHref ? (
+            <>
+              {" "}
+              <a href={settingsHref}>Save one in Settings</a>, or choose a card, UPI, or net banking for this payment.
+            </>
+          ) : (
+            " Choose a card, UPI, or net banking for this bill."
+          )}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="pay-sheet">
+      <p className="fine">This payment uses the saved method: {saved}. Nothing else needs to be typed. Nothing is charged until the payment gateway is connected.</p>
+    </div>
+  );
+}
+
+function PayMark({ kind }: { kind: "credit" | "debit" | "upi" | "bank" | "auto" }) {
+  if (kind === "upi") return <UpiMark />;
+  if (kind === "bank") return <BankMark />;
+  if (kind === "auto") return <AutoMark />;
+  return <CardMark debit={kind === "debit"} />;
+}
+
 function UpiMark() {
   return (
     <svg viewBox="0 0 32 32" width="22" height="22">
@@ -173,12 +191,27 @@ function UpiMark() {
   );
 }
 
-function CardMark() {
+function CardMark({ debit }: { debit: boolean }) {
   return (
     <svg viewBox="0 0 32 32" width="22" height="22">
       <rect x="3" y="7" width="26" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
       <path d="M3 13h26" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M7 20h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {debit ? (
+        <circle cx="11" cy="19.5" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      ) : (
+        <path d="M7 20h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+
+function AutoMark() {
+  return (
+    <svg viewBox="0 0 32 32" width="22" height="22">
+      <path d="M8 16a8 8 0 0 1 13.5-5.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M24 16a8 8 0 0 1-13.5 5.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M20 7.5h3.2V11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 24.5H8.8V21" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

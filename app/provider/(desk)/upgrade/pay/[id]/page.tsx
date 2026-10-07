@@ -48,7 +48,7 @@ export default async function UpgradePaymentPage({
         </div>
       </header>
       <Banner error={query.error} notice={notice} />
-      <article className="card pay-card">
+      <article className="card pay-card summary">
         <header className="pay-hero">
           <span className="pay-kicker">Payable to {platform.legal_name}</span>
           <p className="pay-amount">{formatInr(payable)}</p>

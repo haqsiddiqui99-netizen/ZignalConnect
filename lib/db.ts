@@ -395,6 +395,13 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("reminder_due_title")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_title TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("reminder_due_body")) db.exec("ALTER TABLE providers ADD COLUMN reminder_due_body TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("billing_term")) db.exec("ALTER TABLE providers ADD COLUMN billing_term TEXT NOT NULL DEFAULT 'monthly'");
+  if (!billColumns.has("line_kind")) db.exec("ALTER TABLE providers ADD COLUMN line_kind TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("line_host")) db.exec("ALTER TABLE providers ADD COLUMN line_host TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("line_port")) db.exec("ALTER TABLE providers ADD COLUMN line_port INTEGER NOT NULL DEFAULT 0");
+  if (!billColumns.has("line_user")) db.exec("ALTER TABLE providers ADD COLUMN line_user TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("line_secret")) db.exec("ALTER TABLE providers ADD COLUMN line_secret TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("line_db")) db.exec("ALTER TABLE providers ADD COLUMN line_db TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("line_coa")) db.exec("ALTER TABLE providers ADD COLUMN line_coa TEXT NOT NULL DEFAULT ''");
 
   const orderColumns = columnNames(db, "upgrade_orders");
   if (orderColumns.size > 0 && !orderColumns.has("billing_term")) {
@@ -951,6 +958,9 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
     ["plan_amount", "INTEGER NOT NULL DEFAULT 0"],
     ["plan_cycle", "TEXT NOT NULL DEFAULT ''"],
     ["plan_label", "TEXT NOT NULL DEFAULT ''"],
+    ["line_name", "TEXT NOT NULL DEFAULT ''"],
+    ["account_category", "TEXT NOT NULL DEFAULT 'Residential'"],
+    ["disconnect_unpaid", "INTEGER NOT NULL DEFAULT 0"],
   ];
   for (const [name, definition] of adds) {
     if (!columns.has(name)) db.exec(`ALTER TABLE customers ADD COLUMN ${name} ${definition}`);

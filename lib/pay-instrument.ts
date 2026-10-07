@@ -22,8 +22,30 @@ export const PREFERRED_BANKS = [
 
 export type GatewayPayment =
   | { method: "UPI"; detail: string; upi: string }
-  | { method: "Card"; detail: string; holder: string; number: string; expiry: string; cvv: string }
-  | { method: "Net banking"; detail: string; bank: string };
+  | { method: "Credit card" | "Debit card"; detail: string; holder: string; number: string; expiry: string; cvv: string }
+  | { method: "Net banking"; detail: string; bank: string }
+  | { method: "Auto-pay"; detail: string };
+
+export function savedPaymentLine(provider: {
+  pay_method?: string;
+  pay_via?: string;
+  pay_holder?: string;
+  pay_detail?: string;
+  pay_expiry?: string;
+} | undefined) {
+  if (!provider?.pay_method) return "";
+  const via = provider.pay_method === "auto_pay" ? provider.pay_via : provider.pay_method;
+  const kind =
+    via === "credit_card" ? "Credit card" : via === "debit_card" ? "Debit card" : via === "upi" ? "UPI" : via === "net_banking" ? "Net banking" : "";
+  if (!kind) return "";
+  if (via === "credit_card" || via === "debit_card") {
+    const tail = [provider.pay_holder, provider.pay_detail ? `•••• ${provider.pay_detail}` : "", provider.pay_expiry].filter(Boolean).join(" · ");
+    return tail ? `${kind} · ${tail}` : kind;
+  }
+  if (via === "upi") return provider.pay_detail ? `${kind} · ${provider.pay_detail}` : kind;
+  const bank = [provider.pay_detail, provider.pay_holder].filter(Boolean).join(" · ");
+  return bank ? `${kind} · ${bank}` : kind;
+}
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -76,7 +98,7 @@ export function readGatewayPayment(formData: FormData): { ok: true; payment: Gat
     }
     return { ok: true, payment: { method, detail: upi, upi } };
   }
-  if (method === "Card") {
+  if (method === "Credit card" || method === "Debit card") {
     const holder = text(formData, "card_name");
     const number = digits(text(formData, "card_number"));
     const expiry = text(formData, "card_expiry");
@@ -90,11 +112,14 @@ export function readGatewayPayment(formData: FormData): { ok: true; payment: Gat
     if (!expiryValid(expiry)) return { ok: false, error: "Enter the expiry as MM/YY." };
     const cvvOk = brand === "Amex" ? cvv.length === 4 : cvv.length === 3;
     if (!cvvOk) return { ok: false, error: "Enter the security code on the card." };
-    const label = brand || "Card";
+    const label = brand || method;
     return {
       ok: true,
       payment: { method, detail: `${label} ···· ${number.slice(-4)}`, holder, number, expiry, cvv },
     };
+  }
+  if (method === "Auto-pay") {
+    return { ok: true, payment: { method, detail: "" } };
   }
   if (method === "Net banking") {
     const picked = text(formData, "bank");

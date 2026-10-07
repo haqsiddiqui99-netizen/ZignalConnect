@@ -47,16 +47,21 @@ function PlaceFields({
   states,
   note,
   requiredPlace = true,
-}: ReturnType<typeof usePinPlace> & { requiredPlace?: boolean }) {
+  hint = true,
+}: ReturnType<typeof usePinPlace> & { requiredPlace?: boolean; hint?: boolean }) {
   return (
     <>
       <div className="isp-line three">
         <label className="field">
-          <span>City</span>
-          <input name="city" required={requiredPlace} value={cityName} onChange={(event) => setCityName(event.target.value)} />
+          <span>
+            City {requiredPlace ? <i className="req" aria-hidden="true">*</i> : null}
+          </span>
+          <input name="city" required={requiredPlace} minLength={requiredPlace ? 2 : undefined} value={cityName} onChange={(event) => setCityName(event.target.value)} />
         </label>
         <label className="field">
-          <span>State</span>
+          <span>
+            State {requiredPlace ? <i className="req" aria-hidden="true">*</i> : null}
+          </span>
           <select name="state" required={requiredPlace} value={stateName} onChange={(event) => setStateName(event.target.value)}>
             <option value="">{requiredPlace ? "Select state" : "Not set"}</option>
             {states.map((item) => (
@@ -65,11 +70,13 @@ function PlaceFields({
           </select>
         </label>
         <label className="field">
-          <span>Country</span>
-          <input name="country" required maxLength={40} value={countryName} onChange={(event) => setCountryName(event.target.value)} />
+          <span>
+            Country <i className="req" aria-hidden="true">*</i>
+          </span>
+          <input name="country" required minLength={2} maxLength={40} value={countryName} onChange={(event) => setCountryName(event.target.value)} />
         </label>
       </div>
-      <p className="fine">{note || "City, state, and country fill in from the PIN code. You can still change them."}</p>
+      {note ? <p className="fine">{note}</p> : hint ? <p className="fine">City, state, and country fill in from the PIN code. You can still change them.</p> : null}
     </>
   );
 }
@@ -99,18 +106,31 @@ export function ServiceAddressFields({
     <>
       <div className="row-2">
         <label className="field">
-          <span>Mobile</span>
-          <input name="mobile" inputMode="numeric" required defaultValue={mobile} placeholder="98xxxxxxxx" />
+          <span>
+            Mobile <i className="req" aria-hidden="true">*</i>
+          </span>
+          <input
+            name="mobile"
+            inputMode="numeric"
+            required
+            minLength={10}
+            maxLength={10}
+            pattern="[6-9][0-9]{9}"
+            title="10-digit mobile number starting with 6, 7, 8, or 9"
+            defaultValue={mobile}
+          />
         </label>
         <label className="field">
-          <span>PIN code</span>
+          <span>
+            PIN code <i className="req" aria-hidden="true">*</i>
+          </span>
           <input
             name="pincode"
             inputMode="numeric"
             required
             maxLength={6}
             pattern="[0-9]{6}"
-            placeholder="400001"
+            title="6-digit PIN code"
             value={place.pin}
             onChange={(event) => void place.onPin(event.target.value)}
           />
@@ -119,14 +139,24 @@ export function ServiceAddressFields({
       {showArea ? (
         <label className="field">
           <span>Area or branch</span>
-          <input name="area" defaultValue={area} placeholder="West, Ward 12, Franchise A" />
+          <input name="area" defaultValue={area} />
         </label>
       ) : null}
       <label className="field">
-        <span>Service address</span>
-        <input name="address" required defaultValue={address} />
+        <span>
+          Service address <i className="req" aria-hidden="true">*</i>
+        </span>
+        <input
+          name="address"
+          required
+          minLength={4}
+          maxLength={160}
+          pattern=".*[A-Za-z0-9].*"
+          title="Enter the service address, at least 4 characters"
+          defaultValue={address}
+        />
       </label>
-      <PlaceFields {...place} />
+      <PlaceFields {...place} hint={false} />
     </>
   );
 }
@@ -180,6 +210,7 @@ export function IspPincodeFields({
             required={required}
             maxLength={6}
             pattern="[0-9]{6}"
+            title="6-digit PIN code"
             placeholder="400001"
             value={place.pin}
             onChange={(event) => void place.onPin(event.target.value)}

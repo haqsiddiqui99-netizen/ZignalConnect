@@ -154,7 +154,9 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
         return (
           <div key={row.key} className="bill-row">
             <label className="field">
-              <span>Internet Plan</span>
+              <span>
+                Internet Plan <i className="req" aria-hidden="true">*</i>
+              </span>
               <select
                 name="plan_id"
                 required
@@ -180,6 +182,7 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
                 <input
                   name="plan_custom_name"
                   required
+                  minLength={2}
                   maxLength={40}
                   value={row.customName}
                   placeholder="Plan name"
@@ -209,7 +212,9 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
               </select>
             </label>
             <label className="field">
-              <span>Amount (₹)</span>
+              <span>
+                Amount (₹) <i className="req" aria-hidden="true">*</i>
+              </span>
               <input name="plan_amount" type="number" min={1} step={1} required value={row.amount} onChange={(event) => updatePlan(row.key, { amount: event.target.value })} />
             </label>
             <TaxMode

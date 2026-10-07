@@ -3,7 +3,7 @@ import type { SupportFollowup, SupportRequest } from "@/lib/support";
 import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isBillTerm, isProductPlan, overflowLimit, staffLimit, termQuote, type ProductPlan } from "@/lib/entitlements";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import type { BillCycle } from "@/lib/bill-cycle";
-import { addDays, addMonths, daysUntil, monthBounds, monthLabel, todayISO } from "@/lib/format";
+import { addDays, addMonths, daysUntil, formatDate, monthBounds, monthLabel, todayISO } from "@/lib/format";
 
 export type Plan = {
   id: number;
@@ -49,7 +49,57 @@ export type Subscriber = {
   invoice_tax_included: number;
   invoice_tax_percent: number;
   password_via: "email" | "whatsapp" | "sms";
+  line_name: string;
+  account_category: string;
+  disconnect_unpaid: number;
 };
+
+export const ACCOUNT_CATEGORIES = [
+  "Residential",
+  "Corporate",
+  "Hospital",
+  "Bank",
+  "Post Office",
+  "School/College",
+  "Government",
+  "Others",
+] as const;
+
+export function isAccountCategory(value: string): value is (typeof ACCOUNT_CATEGORIES)[number] {
+  return (ACCOUNT_CATEGORIES as readonly string[]).includes(value);
+}
+
+export function accountCategoryFromImport(value: string): (typeof ACCOUNT_CATEGORIES)[number] | "invalid" {
+  const text = value.trim().toLowerCase();
+  if (!text) return "Residential";
+  return ACCOUNT_CATEGORIES.find((item) => item.toLowerCase() === text) ?? "invalid";
+}
+
+const CREDIT_LABELS = [
+  "",
+  "1 — Always overdue",
+  "2 — Often pays late",
+  "3 — Sometimes a few days late",
+  "4 — Always pays on the due date",
+  "5 — Always pays on time",
+];
+
+export function subscriberCredit(subscriber?: { id: number; installation_date: string; renew_date: string }) {
+  if (!subscriber?.installation_date) return { value: "", placeholder: "Not rated yet" };
+  const today = todayISO();
+  const unlock = addMonths(subscriber.installation_date, 1);
+  if (today < unlock) return { value: "", placeholder: `Not rated until ${formatDate(unlock)}` };
+  const payments = many<{ paid_at: string; period_start: string }>(
+    "SELECT paid_at, period_start FROM payments WHERE customer_id = ? AND kind = 'full' AND period_start <> '' ORDER BY paid_at DESC LIMIT 6",
+    subscriber.id,
+  );
+  const late = payments.map((payment) => daysUntil(payment.paid_at.slice(0, 10)) - daysUntil(payment.period_start.slice(0, 10)));
+  if (subscriber.renew_date && subscriber.renew_date < today) late.push(-daysUntil(subscriber.renew_date));
+  if (late.length === 0) return { value: "", placeholder: "Not rated until the first payment" };
+  const worst = Math.max(...late);
+  const score = worst > 30 ? 1 : worst > 7 ? 2 : worst > 0 ? 3 : worst === 0 ? 4 : 5;
+  return { value: CREDIT_LABELS[score], placeholder: "" };
+}
 
 export type Payment = {
   id: number;
@@ -126,6 +176,13 @@ export type ProviderRecord = {
   reminder_due_title: string;
   reminder_due_body: string;
   billing_term: string;
+  line_kind: string;
+  line_host: string;
+  line_port: number;
+  line_user: string;
+  line_secret: string;
+  line_db: string;
+  line_coa: string;
 };
 
 const subscriberSelect = `
@@ -134,7 +191,8 @@ const subscriberSelect = `
     c.plan_id, c.plan_label, CASE WHEN c.plan_label <> '' THEN c.plan_label ELSE p.name END AS plan_name, p.speed_mbps, p.price, p.data_cap,
     p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
     c.bill_cycle, c.plan_amount, c.plan_cycle, c.reminders, c.plan_frequency, c.plan_tax_included, c.plan_tax_percent,
-    c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent, c.password_via
+    c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent, c.password_via, c.line_name,
+    c.account_category, c.disconnect_unpaid
   FROM customers c
   JOIN users u ON u.id = c.user_id
   JOIN plans p ON p.id = c.plan_id

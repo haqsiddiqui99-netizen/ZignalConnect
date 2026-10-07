@@ -52,14 +52,17 @@ export default async function BillingPage({
       </header>
       <Banner error={query.error} notice={query.notice} />
       <p className="fine" style={{ marginBottom: 12 }}>
-        Upgrade opens a payment page for that plan. The desk fee follows the term you pick. The ₹3 subscriber overflow, extra staff at ₹10
+        Upgrade opens a payment page for that plan. During a trial, Pay on the current plan opens the same page, so the desk can be paid before the trial ends. The desk fee follows the term you pick. The ₹3 subscriber overflow, extra staff at ₹10
         each, and extra messages at ₹0.50 stay monthly. The payment gateway is the only piece still to connect.
       </p>
       <DeskPlanCards
         currentPlan={usage.plan}
         currentTerm={usage.provider?.billing_term && isBillTerm(usage.provider.billing_term) ? usage.provider.billing_term : "monthly"}
         customers={usage.customers}
+        subscriberBase={usage.subscriberBase}
         isOwner={session.isOwner}
+        onTrial={usage.trial.active}
+        daysLeft={usage.trial.daysLeft}
       />
       <article className="card" style={{ marginTop: 14 }}>
         <h2>ISP details</h2>

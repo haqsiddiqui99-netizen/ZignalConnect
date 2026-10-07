@@ -8,6 +8,8 @@ import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { orderPayable, type UpgradeOrder } from "@/lib/checkout";
 import { one } from "@/lib/db";
+import { savedPaymentLine } from "@/lib/pay-instrument";
+import { getProvider } from "@/lib/queries";
 import { CATALOG, limitLabel } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 
@@ -27,6 +29,7 @@ export default async function UpgradeCheckoutPage({
   if (!order || order.provider_id !== session.providerId) notFound();
   const plan = CATALOG[order.product_plan];
   const payable = orderPayable(order);
+  const saved = savedPaymentLine(getProvider(session.providerId));
   const notice =
     query.notice === "gateway"
       ? "The payment gateway is not connected yet. Nothing was charged, and this desk stays on its current plan."
@@ -79,7 +82,7 @@ export default async function UpgradeCheckoutPage({
             </p>
             <form action={payUpgrade} className="pay-form">
               <input type="hidden" name="order_id" value={order.id} />
-              <PayMethods />
+              <PayMethods saved={saved} settingsHref="/provider/settings" />
               <AddPromo code={order.promo_code || ""} action={applyUpgradePromo} />
               <SubmitButton className="btn primary pay-submit" pendingLabel="Contacting the gateway…">
                 Pay {formatInr(payable)}

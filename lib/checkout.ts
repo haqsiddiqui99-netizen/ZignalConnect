@@ -59,7 +59,7 @@ export function markUpgradePaid(orderId: number) {
   const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", orderId);
   if (!order || order.status === "paid") return order ?? null;
   run(
-    "UPDATE providers SET product_plan = ?, subscriber_base = ?, billing_term = ? WHERE id = ?",
+    "UPDATE providers SET product_plan = ?, subscriber_base = ?, billing_term = ?, trial_ends = '' WHERE id = ?",
     order.product_plan,
     order.subscriber_base,
     order.billing_term || "monthly",

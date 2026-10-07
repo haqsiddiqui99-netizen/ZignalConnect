@@ -1,5 +1,6 @@
-import { changeDeskPassword, saveDeskPayment, saveDeskSettings, saveReminderMessages } from "@/lib/actions";
+import { changeDeskPassword, saveDeskPayment, saveDeskSettings, saveLineLink, saveReminderMessages } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
+import { NetworkBoxFields } from "@/components/network-box";
 import { SavedPaymentFields } from "@/components/saved-payment";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
@@ -23,7 +24,7 @@ export default async function DeskSettings({
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Your name, mobile, theme, password, payment preference, and the two renewal reminders.</p>
+          <p>Your name, mobile, theme, password, the network box, payment preference, and the two renewal reminders.</p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
@@ -72,6 +73,26 @@ export default async function DeskSettings({
           </form>
         </article>
       </section>
+      <article className="card" style={{ marginTop: 14 }}>
+        <h2>Network box</h2>
+        <p className="fine" style={{ margin: "8px 0 16px" }}>
+          Connect MikroTik or RADIUS so a subscriber line follows the desk. Active turns it on. Paused, Disconnect, Collection, and Write off turn it off. The router API uses port 8728. RADIUS uses the database port, usually 3306, and a disconnect message on port 3799 when you add that secret. The desk reaches this address from the server. A box that only answers inside the office will not change the line until that address is reachable. The fiber box is not connected from this page. Without a network box, the desk still saves the status.
+        </p>
+        {session.isOwner ? (
+          <NetworkBoxFields
+            action={saveLineLink}
+            kind={provider?.line_kind ?? ""}
+            host={provider?.line_host ?? ""}
+            port={provider?.line_port ?? 0}
+            user={provider?.line_user ?? ""}
+            hasSecret={Boolean(provider?.line_secret)}
+            database={provider?.line_db ?? ""}
+            hasCoa={Boolean(provider?.line_coa)}
+          />
+        ) : (
+          <p>{networkSummary(provider)}</p>
+        )}
+      </article>
       <article className="card" style={{ marginTop: 14 }}>
         <h2>Payment saved details</h2>
         <p className="fine" style={{ margin: "8px 0 16px" }}>
@@ -135,6 +156,12 @@ export default async function DeskSettings({
       </article>
     </>
   );
+}
+
+function networkSummary(provider: ProviderRecord | undefined) {
+  if (provider?.line_kind === "mikrotik") return `MikroTik · ${provider.line_host || "address not set"}. The owner can change this.`;
+  if (provider?.line_kind === "radius") return `RADIUS · ${provider.line_host || "address not set"}. The owner can change this.`;
+  return "No network box is connected. The owner of this desk can add MikroTik or RADIUS.";
 }
 
 function paymentSummary(provider: ProviderRecord | undefined) {

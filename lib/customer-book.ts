@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
 import { BILL_CYCLES } from "@/lib/bill-cycle";
 import { findSheet, readSheet, type SheetRow } from "@/lib/catalogue-book";
+import { TAX_PRESETS } from "@/lib/charges";
+import { ACCOUNT_CATEGORIES } from "@/lib/queries";
 
 const ACCOUNT_HEADERS: Record<string, string> = {
   name: "name",
@@ -9,7 +11,13 @@ const ACCOUNT_HEADERS: Record<string, string> = {
   mobile: "mobile",
   phone: "mobile",
   address: "address",
+  "pin code": "pincode",
+  pincode: "pincode",
+  pin: "pincode",
+  "postal code": "pincode",
   city: "city",
+  "account category": "accountCategory",
+  category: "accountCategory",
   "installation date": "installation",
   "installed on": "installation",
   "renewal date": "renewal",
@@ -21,6 +29,9 @@ const ACCOUNT_HEADERS: Record<string, string> = {
   reminders: "reminders",
   "payment reminders": "reminders",
   "payment reminder": "reminders",
+  "send payment reminder": "reminders",
+  "disconnect on non pay": "disconnectUnpaid",
+  "disconnect on non-pay": "disconnectUnpaid",
   "tax on invoice": "invoiceTax",
   "invoice tax": "invoiceTax",
 };
@@ -146,9 +157,24 @@ export async function customerWorkbook(catalogue: { plans: string[]; charges: st
   const discountName = catalogue.discounts[0] ?? "";
 
   const account = workbook.addWorksheet("Account");
-  const accountColumns = ["name", "email", "mobile", "address", "city", "installation date", "notes", "area", "bill cycle", "payment reminders", "Tax on invoice(%)"];
+  const accountColumns = [
+    "name",
+    "email",
+    "mobile",
+    "PIN code",
+    "address",
+    "city",
+    "account category",
+    "Send payment reminder",
+    "Disconnect on non pay",
+    "installation date",
+    "notes",
+    "area",
+    "bill cycle",
+    "Tax on invoice(%)",
+  ];
   account.addRow(accountColumns);
-  account.addRow(["Arjun Mehta", "arjun.mehta@mail.com", "9820091104", "14, Pali Hill Road", "Mumbai", "2026-02-01", "ONT in the living room", "West", "Monthly", "Yes", ""]);
+  account.addRow(["Arjun Mehta", "arjun.mehta@mail.com", "9820091104", "400001", "14, Pali Hill Road", "Mumbai", "Residential", "Yes", "No", "2026-02-01", "ONT in the living room", "West", "Monthly", "Included"]);
   styleSheet(account);
 
   const plans = workbook.addWorksheet("Internet plan");
@@ -175,9 +201,14 @@ export async function customerWorkbook(catalogue: { plans: string[]; charges: st
   const planList = writeList(lists, 3, catalogue.plans);
   const chargeList = writeList(lists, 4, catalogue.charges);
   const discountList = writeList(lists, 5, catalogue.discounts);
+  const categoryList = writeList(lists, 6, [...ACCOUNT_CATEGORIES]);
+  const taxList = writeList(lists, 7, ["Included", ...TAX_PRESETS.map((rate) => `${rate}%`)]);
 
+  dropdown(account, accountColumns.indexOf("account category") + 1, categoryList);
+  dropdown(account, accountColumns.indexOf("Send payment reminder") + 1, reminderList);
+  dropdown(account, accountColumns.indexOf("Disconnect on non pay") + 1, reminderList);
   dropdown(account, accountColumns.indexOf("bill cycle") + 1, cycleList);
-  dropdown(account, accountColumns.indexOf("payment reminders") + 1, reminderList);
+  dropdown(account, accountColumns.indexOf("Tax on invoice(%)") + 1, taxList);
   dropdown(plans, planColumns.indexOf("Internet Plan name") + 1, planList);
   dropdown(plans, planColumns.indexOf("Internet Plan Frequency") + 1, cycleList);
   dropdown(charges, chargeColumns.indexOf("Charge name") + 1, chargeList);

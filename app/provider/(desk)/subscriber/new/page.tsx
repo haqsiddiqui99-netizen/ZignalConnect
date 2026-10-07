@@ -33,17 +33,14 @@ export default async function NewCustomerPage({
   }));
   return (
     <>
-      <header className="page-head">
-        <div>
-          <div className="head-line">
-            <Link className="btn small" href="/provider/subscriber">
-              ← All subscribers
-            </Link>
-            <h1>Add a subscriber</h1>
-          </div>
-          <p>This creates the service record and a portal login. A welcome email carries their sign-in email and a private password.</p>
+      <header className="page-head with-action">
+        <div className="head-line">
+          <Link className="btn" href="/provider/subscriber">
+            ← All subscribers
+          </Link>
+          <h1>Add a subscriber</h1>
         </div>
-        <Link className="btn" href="/provider/import">
+        <Link className="btn import-link" href="/provider/import">
           Import Subscribers
         </Link>
       </header>

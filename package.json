@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "exceljs": "^4.4.0",
+    "mysql2": "^3.24.5",
     "next": "^15.5.4",
     "nodemailer": "^10.0.15",
     "react": "^19.1.1",

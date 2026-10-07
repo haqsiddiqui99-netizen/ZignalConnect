@@ -61,13 +61,13 @@ export default async function ImportPage({
             <strong>Use the template tabs.</strong>
             <ol className="fine info-list">
               <li>The file has four tabs: Account, Internet plan, One-time charge, and Discount. The same email ties the rows together. Upload it again for an email that is already on the desk to add the plan, charge, and discount lines. A file with only those tabs updates existing subscribers.</li>
-              <li>Internet plan names, one-time charge names, and discount names must already be on the Catalogue page. This file does not create them. Those columns, plus bill cycle, payment reminders, and Internet Plan frequency, are dropdowns in the template. Download the template again after you add a plan, charge, or discount.</li>
+              <li>Internet plan names, one-time charge names, and discount names must already be on the Catalogue page. This file does not create them. Those columns, plus bill cycle, account category, send payment reminder, disconnect on non pay, and Internet Plan frequency, are dropdowns in the template. Download the template again after you add a plan, charge, or discount.</li>
               <li>Put one customer on Account. The first Internet plan row for that email is the main plan. Another row with the same email adds another plan.</li>
               <li>Leave the plan amount blank to use the catalogue price for that frequency. Leave a charge amount or tax blank to use the catalogue charge.</li>
               <li>A discount row needs only the email and the catalogue discount name. What it applies to, and the value, come from the catalogue.</li>
               <li>Dates can be YYYY-MM-DD or DD/MM/YYYY. The renewal date is set from the activation date, or the account installation date, plus that plan's frequency. Leave a charge date blank to use the account installation date.</li>
-              <li>Bill cycle and Internet Plan frequency are Weekly, Bi-weekly, Monthly, Quarterly, Bi-annual, or Annual. Leave the plan frequency blank to follow the bill cycle. Payment reminders are Yes or No.</li>
-              <li>Tax is a percent such as 18. Leave tax blank when it is already included.</li>
+              <li>Bill cycle and Internet Plan frequency are Weekly, Bi-weekly, Monthly, Quarterly, Bi-annual, or Annual. Leave the plan frequency blank to follow the bill cycle. Account category, send payment reminder, and disconnect on non pay are chosen from the dropdown. PIN code is 6 digits.</li>
+              <li>Tax on invoice is a dropdown: Included, 5%, 12%, 18%, or 22%. Included means tax is already in the price.</li>
             </ol>
           </div>
           <p className="fine" style={{ marginTop: 12 }}>

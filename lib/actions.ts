@@ -36,9 +36,11 @@ import { isPasswordVia, mailConfigured, passwordResetMail, renewalMail, sendMail
 import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
+import { pushLine } from "@/lib/line-link";
 import {
   billCycleFromImport,
   cycleAmount,
+  incompleteCycleCharge,
   isBillCycle,
   nextRenewalDate,
   remindersFromImport,
@@ -47,14 +49,14 @@ import {
 } from "@/lib/bill-cycle";
 import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax";
 import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
-import { readGatewayPayment } from "@/lib/pay-instrument";
+import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
 import { syncDeskOverflow } from "@/lib/receipts";
 import { postOnboardingMessage } from "@/lib/renewals";
 import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
-import { findCataloguePromo, findPlanCoupon, getPlatformProfile, getSubscriber, getSubscriberByUserId, getUsage, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
+import { accountCategoryFromImport, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUsage, isAccountCategory, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
@@ -122,6 +124,9 @@ type SubscriberInput = {
   area: string;
   billCycle: BillCycle;
   reminders: number;
+  lineName: string;
+  accountCategory: string;
+  disconnectUnpaid: number;
 };
 
 function readSubscriberInput(
@@ -148,6 +153,9 @@ function readSubscriberInput(
   const area = allows(plan, "areas") ? readText(formData, "area") : "";
   const billCycle = readText(formData, "bill_cycle");
   const reminders = readText(formData, "reminders") === "off" ? 0 : 1;
+  const lineName = readText(formData, "line_name");
+  const accountCategory = readText(formData, "account_category");
+  const disconnectUnpaid = readText(formData, "disconnect_unpaid") === "yes" ? 1 : 0;
 
   if (name.length < 2) return { ok: false, error: "Enter the subscriber's name." };
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email for the portal login." };
@@ -165,6 +173,10 @@ function readSubscriberInput(
   if (!isBillCycle(billCycle)) return { ok: false, error: "Choose a bill cycle." };
   if (notes.length > 500) return { ok: false, error: "Keep notes under 500 characters." };
   if (area.length > 80) return { ok: false, error: "Keep the area name short." };
+  if (lineName && !/^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$/.test(lineName)) {
+    return { ok: false, error: "Use the PPPoE username from the router: letters, numbers, and . _ @ -." };
+  }
+  if (!isAccountCategory(accountCategory)) return { ok: false, error: "Choose an account category." };
   if (planId && !one("SELECT id FROM plans WHERE id = ? AND provider_id = ?", planId, providerId)) {
     return { ok: false, error: "That plan is no longer on the catalogue." };
   }
@@ -189,8 +201,35 @@ function readSubscriberInput(
       area,
       billCycle,
       reminders,
+      lineName,
+      accountCategory,
+      disconnectUnpaid,
     },
   };
+}
+
+async function syncNetworkLine(providerId: number, lineName: string, up: boolean, options?: { quietIfIdle?: boolean }) {
+  const provider = getProvider(providerId);
+  const kind = provider?.line_kind === "mikrotik" || provider?.line_kind === "radius" ? provider.line_kind : "";
+  if (!kind) {
+    return options?.quietIfIdle
+      ? { state: "idle" as const, detail: "" }
+      : { state: "idle" as const, detail: "Connect the network box in Settings to change the line." };
+  }
+  if (!lineName) return { state: "error" as const, detail: "Add the PPPoE username to change this line on the network." };
+  return pushLine(
+    {
+      kind,
+      host: provider?.line_host ?? "",
+      port: provider?.line_port ?? 0,
+      user: provider?.line_user ?? "",
+      secret: provider?.line_secret ?? "",
+      database: provider?.line_db ?? "",
+      coaSecret: provider?.line_coa ?? "",
+    },
+    lineName,
+    up,
+  );
 }
 
 function insertCustomPlan(providerId: number, amount: number) {
@@ -299,7 +338,10 @@ export async function createSubscriber(formData: FormData) {
   if (!discounts.ok) go("/provider/subscriber/new", { error: discounts.error });
   const planLines = readPlanLines(formData);
   if (!planLines.ok) go("/provider/subscriber/new", { error: planLines.error });
-  const input = parsed.value;
+  const input = {
+    ...parsed.value,
+    renewDate: renewalAfterInstallation(parsed.value.installationDate, parsed.value.billCycle),
+  };
   for (const plan of planLines.plans) {
     if (!plan.planId) continue;
     if (!one("SELECT id FROM plans WHERE id = ? AND provider_id = ?", plan.planId, session.providerId)) {
@@ -334,8 +376,9 @@ export async function createSubscriber(formData: FormData) {
     const customer = run(
       `INSERT INTO customers
         (user_id, mobile, address, city, pincode, state, country, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders,
+         account_category, disconnect_unpaid,
          plan_frequency, plan_tax_included, plan_tax_percent, invoice_tax_included, invoice_tax_percent, plan_amount, plan_cycle, plan_label)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       Number(user.lastInsertRowid),
       input.mobile,
       input.address,
@@ -351,6 +394,8 @@ export async function createSubscriber(formData: FormData) {
       input.area,
       input.billCycle,
       input.reminders,
+      input.accountCategory,
+      input.disconnectUnpaid,
       billing.planFrequency,
       billing.planTaxIncluded ? 1 : 0,
       billing.planTaxPercent,
@@ -361,6 +406,7 @@ export async function createSubscriber(formData: FormData) {
       input.planLabel,
     );
     customerId = Number(customer.lastInsertRowid);
+    run("UPDATE customers SET line_name = ? WHERE id = ?", input.lineName, customerId);
     for (const charge of charges.charges) {
       run(
         "INSERT INTO customer_charges (customer_id, kind, label, frequency, bill_cycle, amount, tax_included, tax_percent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -406,12 +452,13 @@ export async function createSubscriber(formData: FormData) {
 
   const welcome = welcomeMail({ ispName: session.brandName, email: input.email, password });
   const mailed = await sendMail(input.email, welcome.subject, welcome.text, welcome.html);
+  const line = input.lineName ? await syncNetworkLine(session.providerId, input.lineName, input.status === "active") : { detail: "" };
   syncDeskOverflow(session.providerId);
   refresh();
   const notice = mailed.ok
     ? `Subscriber added. A welcome email with the sign-in details was sent to ${input.email}.`
     : `Subscriber added. The welcome email could not be sent to ${input.email}. Use Send reset link.`;
-  go(`/provider/subscriber/${customerId}`, { notice });
+  go(`/provider/subscriber/${customerId}`, { notice: line.detail ? `${notice} ${line.detail}` : notice });
 }
 
 export async function updateSubscriber(formData: FormData) {
@@ -423,6 +470,10 @@ export async function updateSubscriber(formData: FormData) {
   if (!parsed.ok) go(`/provider/subscriber/${id}`, { error: parsed.error });
   const input = parsed.value;
 
+  const renewDate =
+    input.installationDate !== current.installation_date || input.billCycle !== current.bill_cycle
+      ? renewalAfterInstallation(input.installationDate, input.billCycle)
+      : current.renew_date;
   const clash = one<{ id: number }>("SELECT id FROM users WHERE email = ? AND id != ?", input.email, current.user_id);
   if (clash) go(`/provider/subscriber/${id}`, { error: "That email is already used for a login." });
 
@@ -432,7 +483,7 @@ export async function updateSubscriber(formData: FormData) {
     run("UPDATE users SET name = ?, email = ? WHERE id = ?", input.name, input.email, current.user_id);
     run(
       `UPDATE customers
-       SET mobile = ?, address = ?, city = ?, pincode = ?, state = ?, country = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?, bill_cycle = ?, reminders = ?, plan_amount = ?, plan_label = ?
+       SET mobile = ?, address = ?, city = ?, pincode = ?, state = ?, country = ?, status = ?, plan_id = ?, renew_date = ?, installation_date = ?, notes = ?, area = ?, bill_cycle = ?, reminders = ?, account_category = ?, disconnect_unpaid = ?, plan_amount = ?, plan_label = ?, line_name = ?
        WHERE id = ?`,
       input.mobile,
       input.address,
@@ -442,14 +493,17 @@ export async function updateSubscriber(formData: FormData) {
       input.country,
       input.status,
       input.planId,
-      input.renewDate,
+      renewDate,
       input.installationDate,
       input.notes,
       allows(session.productPlan, "areas") ? input.area : current.area,
       input.billCycle,
       input.reminders,
+      input.accountCategory,
+      input.disconnectUnpaid,
       input.planId === current.plan_id ? current.plan_amount : 0,
       input.planId === current.plan_id ? current.plan_label : "",
+      input.lineName,
       id,
     );
     db.exec("COMMIT");
@@ -458,8 +512,16 @@ export async function updateSubscriber(formData: FormData) {
     throw error;
   }
 
+  const changed = input.status !== current.status || input.lineName !== current.line_name;
+  const line = changed ? await syncNetworkLine(session.providerId, input.lineName, input.status === "active") : { state: "idle" as const, detail: "" };
+  const previous =
+    changed && input.lineName !== current.line_name && current.line_name && line.state !== "idle"
+      ? " The previous username was left as it was."
+      : "";
   refresh();
-  go(`/provider/subscriber/${id}`, { notice: "Subscriber details saved." });
+  go(`/provider/subscriber/${id}`, {
+    notice: line.detail ? `Subscriber details saved. ${line.detail}${previous}` : "Subscriber details saved.",
+  });
 }
 
 async function mailResetLink(input: {
@@ -659,12 +721,20 @@ export async function recordPayment(formData: FormData) {
     throw error;
   }
 
+  if (kind === "full" && current.status !== "active") {
+    const line = await syncNetworkLine(session.providerId, current.line_name, true, { quietIfIdle: true });
+    if (line.state === "error" || line.state === "warn") {
+      refresh();
+      go(`/provider/subscriber/${id}`, { tab: "billing", notice: `Payment recorded. ${line.detail}` });
+    }
+  }
+
   refresh();
   go(`/provider/receipt/income/${paymentId}`);
 }
 
 function billingGo(id: number, params?: Record<string, string>): never {
-  go(`/provider/subscriber/${id}`, { tab: "billing", ...params });
+  go(`/provider/subscriber/${id}`, { tab: "plans", ...params });
 }
 
 function billingCustomer(providerId: number, formData: FormData) {
@@ -684,12 +754,10 @@ function billingTiming(value: string) {
   return null;
 }
 
-function readServiceDates(formData: FormData, mode: "both" | "activation") {
+function readServiceDates(formData: FormData, mode: "both" | "activation", cycle?: string) {
   const activated = readText(formData, "activated_on");
-  const renews = mode === "both" ? readText(formData, "renews_on") : "";
   if (!isDate(activated)) return { ok: false as const, error: "Enter the activation date." };
-  if (mode === "both" && !isDate(renews)) return { ok: false as const, error: "Enter the renewal date." };
-  if (mode === "both" && renews < activated) return { ok: false as const, error: "The renewal date is on or after the activation date." };
+  const renews = mode === "both" && cycle && isBillCycle(cycle) ? renewalAfterInstallation(activated, cycle) : "";
   return { ok: true as const, activated, renews };
 }
 
@@ -701,8 +769,8 @@ export async function saveSubscriberPlan(formData: FormData) {
   const cycle = readText(formData, "frequency");
   const amount = Number(formData.get("amount"));
   const tax = billingTax(formData);
-  const dates = readServiceDates(formData, "both");
   if (!isBillCycle(cycle)) billingGo(current.id, { line: "plan", error: "Choose how often this internet plan is billed." });
+  const dates = readServiceDates(formData, "both", cycle);
   if (!Number.isInteger(amount) || amount <= 0) billingGo(current.id, { line: "plan", error: "Enter the plan amount in whole rupees." });
   if (!tax.ok) billingGo(current.id, { line: "plan", error: "Tax is a percent such as 18, or included." });
   if (!dates.ok) billingGo(current.id, { line: "plan", error: dates.error });
@@ -743,12 +811,12 @@ export async function saveExtraPlan(formData: FormData) {
   const cycle = readText(formData, "frequency");
   const amount = Number(formData.get("amount"));
   const tax = billingTax(formData);
-  const dates = readServiceDates(formData, "both");
   const back = extraId ? `extra-${extraId}` : "add-plan";
+  if (!isBillCycle(cycle)) billingGo(current.id, { line: back, error: "Choose how often this internet plan is billed." });
+  const dates = readServiceDates(formData, "both", cycle);
   if (extraId && !one("SELECT id FROM customer_extra_plans WHERE id = ? AND customer_id = ?", extraId, current.id)) {
     billingGo(current.id, { error: "That internet plan was not found on this account." });
   }
-  if (!isBillCycle(cycle)) billingGo(current.id, { line: back, error: "Choose how often this internet plan is billed." });
   if (!Number.isInteger(amount) || amount <= 0) billingGo(current.id, { line: back, error: "Enter the plan amount in whole rupees." });
   if (!tax.ok) billingGo(current.id, { line: back, error: "Tax is a percent such as 18, or included." });
   if (!dates.ok) billingGo(current.id, { line: back, error: dates.error });
@@ -799,13 +867,79 @@ export async function saveExtraPlan(formData: FormData) {
   billingGo(current.id, { notice: extraId ? "Internet plan updated." : "Internet plan added." });
 }
 
-export async function deleteExtraPlan(formData: FormData) {
+export async function disconnectExtraPlan(formData: FormData) {
   const session = await requireRole("admin");
   const current = billingCustomer(session.providerId, formData);
   const extraId = Number(formData.get("extra_id"));
-  run("DELETE FROM customer_extra_plans WHERE id = ? AND customer_id = ?", extraId, current.id);
+  const back = `disconnect-${extraId}`;
+  const plan = one<{
+    label: string;
+    plan_name: string;
+    price: number;
+    bill_cycle: string;
+    amount: number;
+    tax_included: number;
+    tax_percent: number;
+    activated_on: string;
+    renews_on: string;
+  }>(
+    `SELECT e.label, CASE WHEN e.label <> '' THEN e.label ELSE p.name END AS plan_name, p.price, e.bill_cycle, e.amount, e.tax_included, e.tax_percent, e.activated_on, e.renews_on
+     FROM customer_extra_plans e JOIN plans p ON p.id = e.plan_id
+     WHERE e.id = ? AND e.customer_id = ?`,
+    extraId,
+    current.id,
+  );
+  if (!plan) billingGo(current.id, { error: "That internet plan was not found on this account." });
+  const activated = isDate(plan.activated_on) ? plan.activated_on : current.installation_date;
+  const renews = isDate(plan.renews_on) ? plan.renews_on : current.renew_date;
+  const amount = plan.amount > 0 ? plan.amount : cycleAmount(plan.price, plan.bill_cycle);
+  const quote = incompleteCycleCharge(activated, renews, todayISO(), amount);
+  const settlement = readText(formData, "settlement");
+  if (quote.incomplete && settlement !== "full" && settlement !== "none" && settlement !== "prorate") {
+    billingGo(current.id, { line: back, error: "Choose how to charge the incomplete cycle." });
+  }
+  const charge = quote.incomplete
+    ? settlement === "full"
+      ? quote.full
+      : settlement === "prorate"
+        ? quote.prorate
+        : 0
+    : todayISO() >= renews
+      ? quote.full
+      : 0;
+  const name = (plan.plan_name || "Internet plan").slice(0, 28);
+  const label = (quote.incomplete && settlement === "prorate" ? `${name} prorated` : `${name} full cycle`).slice(0, 40);
+  const db = getDb();
+  db.exec("BEGIN");
+  try {
+    if (charge > 0) {
+      run(
+        "INSERT INTO customer_charges (customer_id, kind, label, frequency, bill_cycle, amount, tax_included, tax_percent, activated_on) VALUES (?, 'service', ?, 'once', '', ?, ?, ?, ?)",
+        current.id,
+        label,
+        charge,
+        plan.tax_included,
+        plan.tax_percent,
+        quote.incomplete && settlement === "prorate" ? todayISO() : activated,
+      );
+    }
+    run("DELETE FROM customer_extra_plans WHERE id = ? AND customer_id = ?", extraId, current.id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
   refresh();
-  billingGo(current.id, { notice: "Internet plan removed." });
+  const notice = !quote.incomplete
+    ? charge > 0
+      ? "Plan disconnected. The finished cycle stays on the open invoice."
+      : "Plan disconnected."
+    : settlement === "full"
+      ? "Plan disconnected. The full cycle stays on the open invoice."
+      : settlement === "prorate"
+        ? "Plan disconnected. A prorated charge is on the open invoice."
+        : "Plan disconnected. This cycle was not charged.";
+  billingGo(current.id, { notice });
 }
 
 export async function saveCustomerCharge(formData: FormData) {
@@ -950,14 +1084,14 @@ export async function updatePaymentDetails(formData: FormData) {
   const methods = ["UPI", "Card", "Net banking", "Cash", "Internet"];
   const back = `payment-${paymentId}`;
   if (!one("SELECT id FROM payments WHERE id = ? AND customer_id = ?", paymentId, current.id)) {
-    billingGo(current.id, { error: "That payment was not found on this account." });
+    billingGo(current.id, { tab: "payment", error: "That payment was not found on this account." });
   }
-  if (!Number.isInteger(amount) || amount <= 0) billingGo(current.id, { line: back, error: "Enter the payment in whole rupees." });
-  if (!methods.includes(method)) billingGo(current.id, { line: back, error: "Choose a payment method." });
-  if (note.length > 200) billingGo(current.id, { line: back, error: "Keep the payment note short." });
+  if (!Number.isInteger(amount) || amount <= 0) billingGo(current.id, { tab: "payment", line: back, error: "Enter the payment in whole rupees." });
+  if (!methods.includes(method)) billingGo(current.id, { tab: "payment", line: back, error: "Choose a payment method." });
+  if (note.length > 200) billingGo(current.id, { tab: "payment", line: back, error: "Keep the payment note short." });
   run("UPDATE payments SET amount = ?, method = ?, note = ?, receipt_snapshot = '' WHERE id = ? AND customer_id = ?", amount, method, note, paymentId, current.id);
   refresh();
-  billingGo(current.id, { notice: "Payment updated. The renewal date is unchanged." });
+  billingGo(current.id, { tab: "payment", notice: "Payment updated. The renewal date is unchanged." });
 }
 
 export async function sendReminder(formData: FormData) {
@@ -1088,6 +1222,9 @@ export async function payBill(formData: FormData) {
   const promoCode = readText(formData, "promo");
   const instrument = readGatewayPayment(formData);
   if (!instrument.ok) go("/subscriber/pay", { promo: promoCode, error: instrument.error });
+  if (instrument.payment.method === "Auto-pay") {
+    go("/subscriber/pay", { promo: promoCode, error: "Auto-pay uses a method saved in Settings. Choose a card, UPI, or net banking for this bill." });
+  }
   const { payment } = instrument;
 
   const today = todayISO();
@@ -1158,6 +1295,7 @@ export async function payBill(formData: FormData) {
     throw error;
   }
 
+  if (current.status !== "active") await syncNetworkLine(session.providerId, current.line_name, true, { quietIfIdle: true });
   refresh();
   go(`/subscriber/receipt/${paymentId}`);
 }
@@ -1419,10 +1557,13 @@ export async function importCustomers(formData: FormData) {
       const mobile = (row.cells.mobile ?? "").replace(/\s+/g, "");
       const address = (row.cells.address ?? "").trim();
       const city = (row.cells.city ?? "").trim();
+      const pincode = (row.cells.pincode ?? "").replace(/\s+/g, "");
       const notes = (row.cells.notes ?? "").trim();
       const area = (row.cells.area ?? "").trim();
       const billCycle = billCycleFromImport(row.cells.billCycle ?? "");
       const reminders = remindersFromImport(row.cells.reminders ?? "");
+      const accountCategory = accountCategoryFromImport(row.cells.accountCategory ?? "");
+      const disconnectUnpaid = remindersFromImport(row.cells.disconnectUnpaid ?? "no");
       const invoiceTax = parseChargeTax(row.cells.invoiceTax ?? "");
       const accountInstalled = dated(row.cells.installation ?? "");
       const accountRenewal = dated(row.cells.renewal ?? "");
@@ -1441,8 +1582,11 @@ export async function importCustomers(formData: FormData) {
         if (!/^\S+@\S+\.\S+$/.test(email)) fail(row.line, `Account, row ${row.line}: Email is not valid.`);
         if (!/^[6-9]\d{9}$/.test(mobile)) fail(row.line, `Account, row ${row.line}: Mobile must be a 10-digit number.`);
         if (address.length < 4 || city.length < 2) fail(row.line, `Account, row ${row.line}: Address and city are required.`);
+        if (!/^\d{6}$/.test(pincode)) fail(row.line, `Account, row ${row.line}: PIN code must be 6 digits.`);
         if (billCycle === "invalid") fail(row.line, `Account, row ${row.line}: Bill cycle must be weekly, bi-weekly, monthly, quarterly, bi-annual, or annual.`);
-        if (reminders === "invalid") fail(row.line, `Account, row ${row.line}: Reminders must be yes or no.`);
+        if (reminders === "invalid") fail(row.line, `Account, row ${row.line}: Send payment reminder must be yes or no.`);
+        if (accountCategory === "invalid") fail(row.line, `Account, row ${row.line}: Choose an account category from the list.`);
+        if (disconnectUnpaid === "invalid") fail(row.line, `Account, row ${row.line}: Disconnect on non pay must be yes or no.`);
         if (!invoiceTax.ok) fail(row.line, `Account, row ${row.line}: Invoice tax is a percent such as 18, or blank when tax is already included.`);
         if (accountInstalled === "invalid" || accountRenewal === "invalid") fail(row.line, `Account, row ${row.line}: Dates must be YYYY-MM-DD or DD/MM/YYYY.`);
         if (notes.length > 500) fail(row.line, `Account, row ${row.line}: Keep notes under 500 characters.`);
@@ -1603,7 +1747,7 @@ export async function importCustomers(formData: FormData) {
         continue;
       }
 
-      if (!main || !invoiceTax.ok || billCycle === "invalid" || reminders === "invalid") continue;
+      if (!main || !invoiceTax.ok || billCycle === "invalid" || reminders === "invalid" || accountCategory === "invalid" || disconnectUnpaid === "invalid") continue;
 
       const password = newSubscriberPassword();
       const user = run(
@@ -1616,13 +1760,14 @@ export async function importCustomers(formData: FormData) {
       );
       const customer = run(
         `INSERT INTO customers
-          (user_id, mobile, address, city, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders,
+          (user_id, mobile, address, city, pincode, status, plan_id, renew_date, installation_date, notes, area, bill_cycle, reminders, account_category, disconnect_unpaid,
            plan_frequency, plan_tax_included, plan_tax_percent, invoice_tax_included, invoice_tax_percent, plan_amount, plan_cycle, plan_label)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, 'recurring', ?, ?, ?, ?, ?, ?, '')`,
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recurring', ?, ?, ?, ?, ?, ?, '')`,
         Number(user.lastInsertRowid),
         mobile,
         address,
         city,
+        pincode,
         main.planId,
         renewDate,
         installationDate,
@@ -1630,6 +1775,8 @@ export async function importCustomers(formData: FormData) {
         allows(session.productPlan, "areas") ? area.slice(0, 80) : "",
         billCycle,
         reminders ? 1 : 0,
+        accountCategory,
+        disconnectUnpaid ? 1 : 0,
         main.taxIncluded ? 1 : 0,
         main.taxPercent,
         invoiceTax.taxIncluded ? 1 : 0,
@@ -1749,6 +1896,7 @@ export async function importPayments(formData: FormData) {
   let imported = 0;
   const seenRefs = new Set<string>();
   const seenCash = new Set<string>();
+  const turnedOn: number[] = [];
   const db = getDb();
   let batchId = 0;
 
@@ -1914,6 +2062,7 @@ export async function importPayments(formData: FormData) {
         run("UPDATE customer_charges SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", customerId);
         run("UPDATE customer_discounts SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", customerId);
         if (current.plan_frequency === "once") run("UPDATE customers SET plan_billed = 1 WHERE id = ?", customerId);
+        if (current.status !== "active") turnedOn.push(customerId);
       }
       if (transactionId) seenRefs.add(refKey);
       else seenCash.add(`${customerId}:${amount}:${paidOn}:${source}`);
@@ -1936,9 +2085,16 @@ export async function importPayments(formData: FormData) {
     throw error;
   }
 
+  let networkMisses = 0;
+  for (const customerId of turnedOn) {
+    const row = one<{ line_name: string }>("SELECT line_name FROM customers WHERE id = ?", customerId);
+    const line = await syncNetworkLine(session.providerId, row?.line_name ?? "", true, { quietIfIdle: true });
+    if (line.state === "error" || line.state === "warn") networkMisses += 1;
+  }
   refresh();
+  const networkNote = networkMisses ? ` ${networkMisses} line${networkMisses === 1 ? "" : "s"} stayed off on the network.` : "";
   go("/provider/payments", {
-    notice: `Recorded ${imported}. Skipped ${issues.length}.`,
+    notice: `Recorded ${imported}. Skipped ${issues.length}.${networkNote}`,
     batch: String(batchId),
   });
 }
@@ -2404,7 +2560,8 @@ export async function openUpgradeCheckout(formData: FormData) {
     });
   }
   const currentTerm: BillTerm = usage.provider?.billing_term && isBillTerm(usage.provider.billing_term) ? usage.provider.billing_term : "monthly";
-  if (nextPlan === usage.plan && subscriberBase === usage.subscriberBase && term === currentTerm) {
+  const sameOffer = nextPlan === usage.plan && subscriberBase === usage.subscriberBase && term === currentTerm;
+  if (sameOffer && !usage.trial.active) {
     go("/provider/upgrade", { error: "This desk is already on that plan." });
   }
   const provider = usage.provider;
@@ -2516,9 +2673,15 @@ export async function payUpgrade(formData: FormData) {
   if (order.status === "paid") redirect("/provider/upgrade?notice=Plan%20updated.");
   const instrument = readGatewayPayment(formData);
   if (!instrument.ok) go(`/provider/upgrade/pay/${id}/checkout`, { error: instrument.error });
+  let payment = instrument.payment;
+  if (payment.method === "Auto-pay") {
+    const saved = savedPaymentLine(getProvider(session.providerId));
+    if (!saved) go(`/provider/upgrade/pay/${id}/checkout`, { error: "Save a payment method in Settings before using auto-pay." });
+    payment = { method: "Auto-pay", detail: saved };
+  }
   const payable = orderPayable(order);
   if (payable > 0) {
-    const result = collectUpgradePayment(order.id, instrument.payment);
+    const result = collectUpgradePayment(order.id, payment);
     if (!result.ok) redirect(`/provider/upgrade/pay/${id}/checkout?notice=gateway`);
   }
   markUpgradePaid(order.id);
@@ -2855,6 +3018,62 @@ export async function saveDeskSettings(formData: FormData) {
   run("UPDATE users SET name = ?, mobile = ?, theme = ? WHERE id = ? AND provider_id = ?", name, mobile, theme, session.uid, session.providerId);
   refresh();
   go("/provider/settings", { notice: "Settings saved." });
+}
+
+export async function saveLineLink(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner can connect the network box." });
+  const current = getProvider(session.providerId);
+  if (!current) go("/provider/settings", { error: "This desk was not found." });
+  const kind = readText(formData, "line_kind");
+  if (kind !== "" && kind !== "mikrotik" && kind !== "radius") {
+    go("/provider/settings", { error: "Choose MikroTik, RADIUS, or not connected." });
+  }
+  if (!kind) {
+    run("UPDATE providers SET line_kind = '' WHERE id = ?", session.providerId);
+    refresh();
+    go("/provider/settings", { notice: "Network box disconnected. Line status on the desk still saves." });
+  }
+  const host = readText(formData, "line_host");
+  if (!/^[A-Za-z0-9.-]{1,253}$/.test(host) || host.includes("..") || host.startsWith(".") || host.endsWith(".")) {
+    go("/provider/settings", { error: "Enter the router or database address." });
+  }
+  const portRaw = readText(formData, "line_port");
+  const port = portRaw ? Number(portRaw) : kind === "mikrotik" ? 8728 : 3306;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) go("/provider/settings", { error: "Enter a port between 1 and 65535." });
+  const user = readText(formData, "line_user");
+  if (user.length < 1 || user.length > 64) go("/provider/settings", { error: "Enter the login name for the network box." });
+  const secretInput = String(formData.get("line_secret") ?? "");
+  const secret = secretInput || current.line_secret;
+  if (!secret) go("/provider/settings", { error: "Enter the password for the network box." });
+  if (secret.length > 200) go("/provider/settings", { error: "That password is too long." });
+  const database = kind === "radius" ? readText(formData, "line_db") : current.line_db;
+  if (kind === "radius" && !/^[A-Za-z0-9_]{1,64}$/.test(database)) {
+    go("/provider/settings", { error: "Enter the RADIUS database name using letters, numbers, and underscore." });
+  }
+  const coaInput = String(formData.get("line_coa") ?? "");
+  const coa = kind === "radius" ? coaInput || current.line_coa : current.line_coa;
+  if (coa.length > 200) go("/provider/settings", { error: "That disconnect secret is too long." });
+  run(
+    `UPDATE providers
+     SET line_kind = ?, line_host = ?, line_port = ?, line_user = ?, line_secret = ?, line_db = ?, line_coa = ?
+     WHERE id = ?`,
+    kind,
+    host,
+    port,
+    user,
+    secret,
+    database,
+    coa,
+    session.providerId,
+  );
+  refresh();
+  go("/provider/settings", {
+    notice:
+      kind === "mikrotik"
+        ? "MikroTik saved. Active, Paused, and Disconnect on a subscriber use this router when a PPPoE username is filled in."
+        : "RADIUS saved. Active allows the next login. Paused and Disconnect block it.",
+  });
 }
 
 export async function saveReminderMessages(formData: FormData) {
