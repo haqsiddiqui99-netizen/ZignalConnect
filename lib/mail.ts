@@ -78,7 +78,7 @@ async function sendViaWeb(
   html: string | undefined,
   from: string,
 ): Promise<{ ok: true } | { ok: false; reason: "failed"; detail: string }> {
-  const banner = `${siteOrigin()}/email-banner.png`;
+  const banner = `${siteOrigin()}/email-banner.png?v=2`;
   const body: Record<string, unknown> = {
     from: fromAddress(from),
     to: [to],
