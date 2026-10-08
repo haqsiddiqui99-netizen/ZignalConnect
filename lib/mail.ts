@@ -40,7 +40,7 @@ function mailFailure(error: unknown) {
     return "The mail server refused the sign-in. For this Google mailbox, set the host to smtp.gmail.com and use an app password.";
   }
   if (code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ESOCKET" || code === "EDNS" || code === "ENOTFOUND" || code === "ECONNREFUSED") {
-    return "The mail server did not answer. Railway blocks port 587 on the Hobby plan. SMTP works on the Pro plan, after a redeploy.";
+    return "The mail server did not answer. On the Hobby plan, add RESEND_API_KEY on Railway. That sends over normal web traffic.";
   }
   if (responseCode === 550 || responseCode === 553) {
     return "The mail server refused the From address. Set it to the same address as the mail sign-in.";
@@ -48,8 +48,61 @@ function mailFailure(error: unknown) {
   return "The mail server refused the message.";
 }
 
+function webMailReady() {
+  return Boolean(mailSetting("RESEND_API_KEY") && mailSetting("SMTP_FROM"));
+}
+
 export function mailConfigured() {
-  return Boolean(mailSetting("SMTP_HOST") && mailSetting("SMTP_FROM"));
+  return Boolean(mailSetting("SMTP_FROM") && (mailSetting("RESEND_API_KEY") || mailSetting("SMTP_HOST")));
+}
+
+function fromAddress(raw: string) {
+  if (raw.includes("<")) return raw;
+  return `Zignal Connect <${raw}>`;
+}
+
+function webFailure(status: number, message: string) {
+  const lower = message.toLowerCase();
+  console.error(`mail send failed: web ${status}`);
+  if (status === 401 || status === 403) return "The mail key was refused. Check RESEND_API_KEY on Railway.";
+  if (status === 422 || lower.includes("domain") || lower.includes("verify") || lower.includes("from")) {
+    return "The From address is not verified yet. In Resend, verify zignalconnect.com, then try again.";
+  }
+  return "The mail service refused the message.";
+}
+
+async function sendViaWeb(
+  to: string,
+  subject: string,
+  text: string,
+  html: string | undefined,
+  from: string,
+): Promise<{ ok: true } | { ok: false; reason: "failed"; detail: string }> {
+  const banner = `${siteOrigin()}/email-banner.png`;
+  const body: Record<string, unknown> = {
+    from: fromAddress(from),
+    to: [to],
+    subject,
+    text,
+  };
+  if (html) body.html = html.split("cid:zignal-banner").join(banner);
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${mailSetting("RESEND_API_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.ok) return { ok: true };
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    return { ok: false, reason: "failed", detail: webFailure(response.status, payload?.message || "") };
+  } catch {
+    console.error("mail send failed: web");
+    return { ok: false, reason: "failed", detail: "The mail service did not answer." };
+  }
 }
 
 function escapeHtml(value: string) {
@@ -241,9 +294,16 @@ export async function sendMail(
   text: string,
   html?: string,
 ): Promise<{ ok: true } | { ok: false; reason: "unconfigured" | "failed"; detail: string }> {
-  const host = smtpHost(mailSetting("SMTP_HOST"));
   const from = mailSetting("SMTP_FROM");
-  if (!host || !from) return { ok: false, reason: "unconfigured", detail: "Email is not connected yet, so the note was not sent." };
+  if (webMailReady()) return sendViaWeb(to, subject, text, html, from);
+  const host = smtpHost(mailSetting("SMTP_HOST"));
+  if (!host || !from) {
+    return {
+      ok: false,
+      reason: "unconfigured",
+      detail: "Email is not connected yet. Add RESEND_API_KEY on Railway to send over normal web traffic.",
+    };
+  }
   try {
     const port = Number(mailSetting("SMTP_PORT") || 587);
     const user = mailSetting("SMTP_USER");
