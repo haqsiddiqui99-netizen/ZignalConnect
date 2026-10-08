@@ -3047,12 +3047,14 @@ export async function sendDeskMail(formData: FormData) {
     go("/zignal/mail", { error: "Choose a desk." });
   }
   let sent = 0;
+  let detail = "The note could not be sent.";
   for (const id of ids) {
     const result = await sendDeskNote(id, title, body);
     if (result.ok) sent += 1;
+    else if (result.detail) detail = result.detail;
   }
   refresh();
-  if (sent === 0) go("/zignal/mail", { error: "The note could not be sent." });
+  if (sent === 0) go("/zignal/mail", { error: detail });
   go("/zignal/mail", { notice: sent === 1 ? "The note was sent to 1 desk." : `The note was sent to ${sent} desks.` });
 }
 

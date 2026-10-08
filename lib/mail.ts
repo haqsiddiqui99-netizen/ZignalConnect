@@ -20,6 +20,34 @@ function mailSetting(name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function smtpHost(value: string) {
+  const host = value.toLowerCase();
+  if (host === "smtp.google.com" || host === "aspmx.l.google.com" || host === "gmail.com") return "smtp.gmail.com";
+  return value;
+}
+
+function smtpPassword(host: string, pass: string) {
+  if (host.endsWith("gmail.com") || host.endsWith("google.com")) return pass.replace(/\s+/g, "");
+  return pass;
+}
+
+function mailFailure(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String((error as { code?: string }).code || "") : "";
+  const responseCode =
+    error && typeof error === "object" && "responseCode" in error ? Number((error as { responseCode?: number }).responseCode) : 0;
+  console.error(`mail send failed: ${code || "error"} ${responseCode || ""}`.trim());
+  if (code === "EAUTH" || responseCode === 534 || responseCode === 535) {
+    return "The mail server refused the sign-in. For this Google mailbox, set the host to smtp.gmail.com and use an app password.";
+  }
+  if (code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ESOCKET" || code === "EDNS" || code === "ENOTFOUND" || code === "ECONNREFUSED") {
+    return "The mail server did not answer. Railway blocks port 587 on the Hobby plan. SMTP works on the Pro plan, after a redeploy.";
+  }
+  if (responseCode === 550 || responseCode === 553) {
+    return "The mail server refused the From address. Set it to the same address as the mail sign-in.";
+  }
+  return "The mail server refused the message.";
+}
+
 export function mailConfigured() {
   return Boolean(mailSetting("SMTP_HOST") && mailSetting("SMTP_FROM"));
 }
@@ -212,10 +240,10 @@ export async function sendMail(
   subject: string,
   text: string,
   html?: string,
-): Promise<{ ok: true } | { ok: false; reason: "unconfigured" | "failed" }> {
-  const host = mailSetting("SMTP_HOST");
+): Promise<{ ok: true } | { ok: false; reason: "unconfigured" | "failed"; detail: string }> {
+  const host = smtpHost(mailSetting("SMTP_HOST"));
   const from = mailSetting("SMTP_FROM");
-  if (!host || !from) return { ok: false, reason: "unconfigured" };
+  if (!host || !from) return { ok: false, reason: "unconfigured", detail: "Email is not connected yet, so the note was not sent." };
   try {
     const port = Number(mailSetting("SMTP_PORT") || 587);
     const user = mailSetting("SMTP_USER");
@@ -224,10 +252,11 @@ export async function sendMail(
       host,
       port,
       secure: port === 465,
-      auth: user ? { user, pass: mailSetting("SMTP_PASS") } : undefined,
-      connectionTimeout: 20_000,
-      greetingTimeout: 20_000,
-      socketTimeout: 30_000,
+      requireTLS: port === 587,
+      auth: user ? { user, pass: smtpPassword(host, mailSetting("SMTP_PASS")) } : undefined,
+      connectionTimeout: 12_000,
+      greetingTimeout: 12_000,
+      socketTimeout: 20_000,
     });
     await transport.sendMail({
       from,
@@ -239,8 +268,6 @@ export async function sendMail(
     });
     return { ok: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "send failed";
-    console.error(`mail send failed: ${message}`);
-    return { ok: false, reason: "failed" };
+    return { ok: false, reason: "failed", detail: mailFailure(error) };
   }
 }

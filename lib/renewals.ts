@@ -199,12 +199,13 @@ export async function issueDeskFeeReminders(providerId: number) {
 
 export async function sendDeskNote(providerId: number, title: string, body: string) {
   const provider = getProvider(providerId);
-  if (!provider || provider.closed_at) return { ok: false as const };
+  if (!provider || provider.closed_at) return { ok: false as const, detail: "That desk is closed, so the note was not sent." };
   const owner = one<{ email: string; name: string }>(
     "SELECT email, name FROM users WHERE provider_id = ? AND is_owner = 1 LIMIT 1",
     providerId,
   );
-  if (!owner?.email || !mailConfigured()) return { ok: false as const };
+  if (!owner?.email) return { ok: false as const, detail: "This desk has no owner email, so the note was not sent." };
+  if (!mailConfigured()) return { ok: false as const, detail: "Email is not connected yet, so the note was not sent." };
   const plan: ProductPlan = isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
   const term: BillTerm = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
   const dueOn = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
@@ -220,7 +221,7 @@ export async function sendDeskNote(providerId: number, title: string, body: stri
   const filledBody = fillReminder(body, fields).slice(0, 400);
   const mail = renewalMail({ ispName: provider.name, signoff: "Zignal Connect", title: filledTitle, body: filledBody });
   const sent = await sendMail(owner.email, mail.subject, mail.text, mail.html);
-  if (!sent.ok) return { ok: false as const };
+  if (!sent.ok) return { ok: false as const, detail: sent.detail };
   run(
     "INSERT INTO desk_notices (provider_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', 'custom', ?)",
     providerId,
