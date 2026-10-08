@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { login } from "@/lib/actions";
+import { cancelLogin, confirmLogin, login, resendLoginCode } from "@/lib/actions";
 import { getSession, homePath } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
+import { LOGIN_CODE_ENABLED, pendingLogin } from "@/lib/login-code";
 import { BrandMark } from "@/components/brand-mark";
 import { SITE_LINKS } from "@/components/site-shell";
 import { Banner } from "@/components/ui";
@@ -35,12 +36,13 @@ const SITE_DATA = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; step?: string; notice?: string }>;
 }) {
   const session = await getSession();
   if (session) redirect(homePath(session));
   getDb();
-  const { error } = await searchParams;
+  const { error, step, notice } = await searchParams;
+  const pending = LOGIN_CODE_ENABLED && step === "code" ? await pendingLogin() : null;
 
   return (
     <main className="login">
@@ -88,18 +90,55 @@ export default async function LoginPage({
       <section className="login-panel">
         <div className="panel-card">
           <h2>Sign in</h2>
-          <Banner error={error} />
-          <form action={login} className="stack" style={{ marginTop: 16 }}>
-            <label className="field">
-              <span>Email</span>
-              <input name="email" type="email" autoComplete="username" required />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <input name="password" type="password" autoComplete="current-password" required />
-            </label>
-            <SubmitButton>Sign in</SubmitButton>
-          </form>
+          <Banner error={error} notice={notice === "sent" ? "A new code is on its way." : undefined} />
+          {pending ? (
+            <>
+              <p className="fine" style={{ marginTop: 16 }}>
+                Enter the 6-digit code sent to {pending.email}. It works for 10 minutes.
+              </p>
+              <form action={confirmLogin} className="stack" style={{ marginTop: 16 }}>
+                <label className="field">
+                  <span>
+                    Sign-in code <i className="req" aria-hidden="true">*</i>
+                  </span>
+                  <input
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    required
+                    minLength={6}
+                    maxLength={6}
+                    pattern="[0-9]{6}"
+                    title="6-digit code from your email"
+                  />
+                </label>
+                <SubmitButton>Continue</SubmitButton>
+              </form>
+              <form action={resendLoginCode} style={{ marginTop: 10 }}>
+                <SubmitButton className="btn">Send a new code</SubmitButton>
+              </form>
+              <form action={cancelLogin}>
+                <p className="fine" style={{ marginTop: 14 }}>
+                  <button className="linkish" type="submit">
+                    Use a different account
+                  </button>
+                </p>
+              </form>
+            </>
+          ) : (
+            <form action={login} className="stack" style={{ marginTop: 16 }}>
+              <label className="field">
+                <span>Email</span>
+                <input name="email" type="email" autoComplete="username" required />
+              </label>
+              <label className="field">
+                <span>Password</span>
+                <input name="password" type="password" autoComplete="current-password" required />
+              </label>
+              {LOGIN_CODE_ENABLED ? <p className="fine">After your password, a code is sent to this email.</p> : null}
+              <SubmitButton>Sign in</SubmitButton>
+            </form>
+          )}
           <p className="fine" style={{ marginTop: 14 }}>
             <Link href="/forgot">Forgot password</Link>
             {" · "}

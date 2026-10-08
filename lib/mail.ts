@@ -137,6 +137,62 @@ export function welcomeMail(input: { ispName: string; email: string; password: s
   return letter({ ispName: input.ispName, signoff: input.ispName, subject: `Welcome to ${input.ispName}`, text, blocks });
 }
 
+export function deskWelcomeMail(input: {
+  ispName: string;
+  ownerName: string;
+  email: string;
+  plan: string;
+  trialEnds: string;
+  fee: string;
+}) {
+  const origin = siteOrigin();
+  const text = [
+    `Welcome to Zignal Connect, ${input.ownerName}.`,
+    "",
+    `Your desk for ${input.ispName} is open.`,
+    `Plan: ${input.plan}`,
+    `The trial runs until ${input.trialEnds}. The first desk fee of ${input.fee} is booked for that day. No card is charged during the trial.`,
+    "",
+    "Sign in with:",
+    `Email: ${input.email}`,
+    "Password: the one you chose when you opened the desk.",
+    origin,
+    "",
+    "Best wishes,",
+    "Zignal Connect",
+  ].join("\n");
+  const blocks = `
+    <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">Welcome to Zignal Connect, ${escapeHtml(input.ownerName)}.</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">Your desk for ${escapeHtml(input.ispName)} is open.</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">Plan<br /><strong>${escapeHtml(input.plan)}</strong></p>
+    <p style="margin:10px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">Trial until<br /><strong>${escapeHtml(input.trialEnds)}</strong></p>
+    <p style="margin:10px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">First desk fee<br /><strong>${escapeHtml(input.fee)}</strong></p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">That fee is booked for the end of the trial. No card is charged during the trial.</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.6;">Email<br /><strong>${escapeHtml(input.email)}</strong></p>
+    <p style="margin:10px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">Use the password you chose when you opened the desk.</p>
+    <p style="margin:22px 0 0;">
+      <a href="${escapeHtml(origin)}" style="display:inline-block;background:#14261e;color:#f6f1e8;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;text-decoration:none;padding:12px 22px;border-radius:999px;">Sign in</a>
+    </p>`;
+  return letter({ ispName: input.ispName, signoff: "Zignal Connect", subject: "Welcome to Zignal Connect", text, blocks });
+}
+
+export function loginCodeMail(code: string) {
+  const text = [
+    "Your Zignal Connect sign-in code is:",
+    code,
+    "",
+    "It works for 10 minutes. If you did not try to sign in, ignore this email.",
+    "",
+    "Best wishes,",
+    "Zignal Connect",
+  ].join("\n");
+  const blocks = `
+    <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">Use this code to finish signing in.</p>
+    <p style="margin:18px 0 0;font-family:Georgia,Palatino,serif;font-size:32px;letter-spacing:0.28em;">${escapeHtml(code)}</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">It works for 10 minutes. If you did not try to sign in, ignore this email.</p>`;
+  return letter({ signoff: "Zignal Connect", subject: "Your Zignal Connect sign-in code", text, blocks });
+}
+
 export function renewalMail(input: { ispName: string; signoff: string; title: string; body: string }) {
   const text = [input.title, "", input.body, "", "Best wishes,", input.signoff].join("\n");
   const blocks = `

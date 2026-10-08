@@ -3,8 +3,9 @@ import fs from "fs";
 import path from "path";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { one } from "@/lib/db";
+import { one, run } from "@/lib/db";
 import { isProductPlan, type ProductPlan } from "@/lib/entitlements";
+import { nowClock } from "@/lib/format";
 import { verifyPassword } from "@/lib/password";
 
 export type DeskSession = {
@@ -76,11 +77,50 @@ export async function setSession(uid: number, kind: "desk" | "operator" = "desk"
     path: "/",
     maxAge: 60 * 60 * 12,
   });
+  if (kind === "desk") run("UPDATE users SET last_login = ? WHERE id = ?", nowClock(), uid);
 }
 
 export async function clearSession() {
   const jar = await cookies();
   jar.delete("lumen_session");
+}
+
+const LOGIN_COOKIE = "lumen_login";
+const LOGIN_MINUTES = 10;
+
+export async function setLoginChallenge(id: number) {
+  const body = Buffer.from(JSON.stringify({ id, exp: Date.now() + LOGIN_MINUTES * 60 * 1000 })).toString("base64url");
+  const jar = await cookies();
+  jar.set(LOGIN_COOKIE, `${body}.${sign(body)}`, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: LOGIN_MINUTES * 60,
+  });
+}
+
+export async function readLoginChallenge() {
+  const jar = await cookies();
+  const raw = jar.get(LOGIN_COOKIE)?.value;
+  if (!raw) return null;
+  const [body, sig] = raw.split(".");
+  if (!body || !sig) return null;
+  const actual = Buffer.from(sig);
+  const expected = Buffer.from(sign(body));
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as { id?: number; exp?: number };
+    if (!payload.id || !payload.exp || payload.exp < Date.now()) return null;
+    return payload.id;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearLoginChallenge() {
+  const jar = await cookies();
+  jar.delete(LOGIN_COOKIE);
 }
 
 export async function getSession(): Promise<Session | null> {

@@ -1,3 +1,4 @@
+import { settleDueDesks } from "@/lib/desk-close";
 import { many, one, run } from "@/lib/db";
 import type { SupportFollowup, SupportRequest } from "@/lib/support";
 import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isBillTerm, isProductPlan, overflowLimit, staffLimit, termQuote, type ProductPlan } from "@/lib/entitlements";
@@ -183,6 +184,9 @@ export type ProviderRecord = {
   line_secret: string;
   line_db: string;
   line_coa: string;
+  quit_on: string;
+  quit_reason: string;
+  closed_at: string;
 };
 
 const subscriberSelect = `
@@ -528,6 +532,61 @@ export function listReminders(customerId: number) {
   return many<Reminder>("SELECT * FROM reminders WHERE customer_id = ? ORDER BY id DESC", customerId);
 }
 
+export type DeskMailSettings = {
+  on: boolean;
+  soonTitle: string;
+  soonBody: string;
+  dueTitle: string;
+  dueBody: string;
+};
+
+export const DESK_MAIL_DEFAULTS = {
+  soonTitle: "Desk fee in 3 days",
+  soonBody: "{plan} is due on {date}. The booked desk fee is {amount}. No card is charged from this note.",
+  dueTitle: "Desk fee due today",
+  dueBody: "Today, {date}, is the due date for {plan}. The booked desk fee is {amount}. No card is charged from this note.",
+};
+
+export function deskMailSettings(): DeskMailSettings {
+  const row = one<{
+    desk_mail_on: number;
+    desk_soon_title: string;
+    desk_soon_body: string;
+    desk_due_title: string;
+    desk_due_body: string;
+  }>("SELECT desk_mail_on, desk_soon_title, desk_soon_body, desk_due_title, desk_due_body FROM platform_profile WHERE id = 1");
+  return {
+    on: (row?.desk_mail_on ?? 1) !== 0,
+    soonTitle: row?.desk_soon_title || DESK_MAIL_DEFAULTS.soonTitle,
+    soonBody: row?.desk_soon_body || DESK_MAIL_DEFAULTS.soonBody,
+    dueTitle: row?.desk_due_title || DESK_MAIL_DEFAULTS.dueTitle,
+    dueBody: row?.desk_due_body || DESK_MAIL_DEFAULTS.dueBody,
+  };
+}
+
+export type DeskMailLog = {
+  id: number;
+  isp: string;
+  title: string;
+  body: string;
+  created_at: string;
+  channel: string;
+};
+
+export function listDeskMailLog() {
+  return many<DeskMailLog>(
+    `SELECT n.id, p.name AS isp, n.title, n.body, n.created_at, n.channel
+     FROM desk_notices n
+     JOIN providers p ON p.id = n.provider_id
+     ORDER BY n.id DESC
+     LIMIT 30`,
+  );
+}
+
+export function listOpenDesks() {
+  return many<{ id: number; name: string }>("SELECT id, name FROM providers WHERE closed_at = '' ORDER BY name");
+}
+
 export function listComplaints(scope: { providerId: number } | { customerId: number }) {
   const where = "providerId" in scope ? "u.provider_id = ?" : "k.customer_id = ?";
   const param = "providerId" in scope ? scope.providerId : scope.customerId;
@@ -678,12 +737,29 @@ export type OperatorProvider = {
   paused: number;
   overdue: number;
   billing_term: string;
+  owner_name: string;
+  owner_email: string;
+  last_login: string;
+  city: string;
+  state: string;
+  trial_ends: string;
+  staff: number;
+  fee: number;
+  quit_on: string;
+  quit_reason: string;
+  closed_at: string;
 };
 
 export function operatorDesk() {
+  settleDueDesks();
   const today = todayISO();
-  const providers = many<OperatorProvider>(
+  const providers = many<Omit<OperatorProvider, "fee">>(
     `SELECT p.id, p.name, p.product_plan, p.billing_term, p.support_phone, p.created_at, p.subscriber_base,
+            p.city, p.state, p.trial_ends, p.quit_on, p.quit_reason, p.closed_at,
+            (SELECT u.name FROM users u WHERE u.provider_id = p.id AND u.is_owner = 1 LIMIT 1) AS owner_name,
+            (SELECT u.email FROM users u WHERE u.provider_id = p.id AND u.is_owner = 1 LIMIT 1) AS owner_email,
+            (SELECT MAX(u.last_login) FROM users u WHERE u.provider_id = p.id AND u.role = 'admin' AND u.last_login != '') AS last_login,
+            (SELECT COUNT(*) FROM users u WHERE u.provider_id = p.id AND u.role = 'admin') AS staff,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id) AS subscribers,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'active') AS active,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'suspended') AS paused,
@@ -691,15 +767,26 @@ export function operatorDesk() {
      FROM providers p
      ORDER BY p.name`,
     today,
-  ).map((provider) => ({
-    ...provider,
-    product_plan: isProductPlan(provider.product_plan) ? provider.product_plan : "pro",
-  }));
-  const monthlyOf = (provider: (typeof providers)[number]) => {
-    const term = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
-    return termQuote(CATALOG[provider.product_plan].price, term).perMonth;
-  };
-  const booked = providers.reduce((sum, provider) => sum + monthlyOf(provider), 0);
+  ).map((provider) => {
+    const product_plan = isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
+    const billing_term = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
+    return {
+      ...provider,
+      product_plan,
+      billing_term,
+      owner_name: provider.owner_name || "",
+      owner_email: provider.owner_email || "",
+      last_login: provider.last_login || "",
+      city: provider.city || "",
+      state: provider.state || "",
+      trial_ends: provider.trial_ends || "",
+      quit_on: provider.quit_on || "",
+      quit_reason: provider.quit_reason || "",
+      closed_at: provider.closed_at || "",
+      fee: termQuote(CATALOG[product_plan].price, billing_term).perMonth,
+    };
+  });
+  const booked = providers.reduce((sum, provider) => sum + (provider.closed_at ? 0 : provider.fee), 0);
   const plans = (Object.keys(CATALOG) as ProductPlan[]).map((plan) => {
     const onPlan = providers.filter((provider) => provider.product_plan === plan);
     const price = CATALOG[plan].price;
@@ -708,7 +795,7 @@ export function operatorDesk() {
       label: CATALOG[plan].label,
       providers: onPlan.length,
       price,
-      revenue: onPlan.reduce((sum, provider) => sum + monthlyOf(provider), 0),
+      revenue: onPlan.reduce((sum, provider) => sum + provider.fee, 0),
     };
   });
   return {

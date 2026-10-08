@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { authenticate, clearSession, getSession, requireOperator, requireRole, setSession } from "@/lib/auth";
+import { LOGIN_CODE_ENABLED, beginLoginCode, checkLoginCode, dropLoginCode, replaceLoginCode } from "@/lib/login-code";
 import { normalizeDate, parsePlanCsv, wholeUnits } from "@/lib/csv";
 import crypto from "crypto";
 import { execFile } from "node:child_process";
@@ -32,7 +33,8 @@ import {
   nowStamp,
   todayISO,
 } from "@/lib/format";
-import { isPasswordVia, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
+import { deskWelcomeMail, isPasswordVia, loginCodeMail, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
+import { deskClosedMessage, latestQuitDate, settleDesk } from "@/lib/desk-close";
 import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
@@ -51,12 +53,12 @@ import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax
 import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
 import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
 import { syncDeskOverflow } from "@/lib/receipts";
-import { postOnboardingMessage } from "@/lib/renewals";
+import { postDeskWelcome, postOnboardingMessage, sendDeskNote } from "@/lib/renewals";
 import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
-import { accountCategoryFromImport, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUsage, isAccountCategory, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
+import { accountCategoryFromImport, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUsage, isAccountCategory, listCustomerCharges, listOpenDesks, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
@@ -82,6 +84,7 @@ function refresh() {
   revalidatePath("/provider/support");
   revalidatePath("/provider/settings");
   revalidatePath("/zignal");
+  revalidatePath("/zignal/mail");
   revalidatePath("/zignal/support");
   revalidatePath("/zignal/revenue");
   revalidatePath("/zignal/settings");
@@ -96,9 +99,66 @@ export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const user = authenticate(email, password);
   if (!user) go("/", { error: "Those credentials do not match an account." });
-  await setSession(user.id, user.kind);
-  if (user.kind === "operator") redirect("/zignal");
-  redirect(user.role === "admin" ? "/provider" : "/subscriber");
+  if (user.kind === "desk") {
+    const closed = deskClosedMessage(user.id);
+    if (closed) go("/", { error: closed });
+  }
+  if (!LOGIN_CODE_ENABLED) {
+    await setSession(user.id, user.kind);
+    if (user.kind === "operator") redirect("/zignal");
+    redirect(user.role === "admin" ? "/provider" : "/subscriber");
+  }
+  if (!mailConfigured()) go("/", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
+  const code = await beginLoginCode({ userId: user.id, kind: user.kind, email: user.email });
+  const mail = loginCodeMail(code);
+  const sent = await sendMail(user.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) {
+    await dropLoginCode();
+    go("/", { error: "The sign-in code could not be sent. Try again in a little while." });
+  }
+  redirect("/?step=code");
+}
+
+export async function confirmLogin(formData: FormData) {
+  if (!LOGIN_CODE_ENABLED) redirect("/");
+  const code = readText(formData, "code").replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(code)) go("/?step=code", { error: "Enter the 6-digit code from your email." });
+  const result = await checkLoginCode(code);
+  if (!result.ok) {
+    const error =
+      result.reason === "mismatch"
+        ? "That code does not match. Try again."
+        : "That sign-in code has expired. Sign in again.";
+    go(result.reason === "mismatch" ? "/?step=code" : "/", { error });
+  }
+  if (result.kind === "desk") {
+    const closed = deskClosedMessage(result.userId);
+    if (closed) go("/", { error: closed });
+  }
+  await setSession(result.userId, result.kind);
+  if (result.kind === "operator") redirect("/zignal");
+  const person = one<{ role: string }>("SELECT role FROM users WHERE id = ?", result.userId);
+  redirect(person?.role === "admin" ? "/provider" : "/subscriber");
+}
+
+export async function resendLoginCode() {
+  if (!LOGIN_CODE_ENABLED) redirect("/");
+  if (!mailConfigured()) go("/?step=code", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
+  const next = await replaceLoginCode();
+  if (!next.ok) {
+    go(next.reason === "soon" ? "/?step=code" : "/", {
+      error: next.reason === "soon" ? "Wait a moment before asking for another code." : "That sign-in code has expired. Sign in again.",
+    });
+  }
+  const mail = loginCodeMail(next.code);
+  const sent = await sendMail(next.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) go("/?step=code", { error: "The sign-in code could not be sent. Try again in a little while." });
+  redirect("/?step=code&notice=sent");
+}
+
+export async function cancelLogin() {
+  await dropLoginCode();
+  redirect("/");
 }
 
 export async function logout() {
@@ -1300,6 +1360,66 @@ export async function payBill(formData: FormData) {
   go(`/subscriber/receipt/${paymentId}`);
 }
 
+export async function requestDeskClose(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner of this desk can close it." });
+  const quitOn = readText(formData, "quit_on");
+  const reason = readText(formData, "reason").replace(/\s+/g, " ");
+  const password = String(formData.get("password") ?? "");
+  const today = todayISO();
+  const latest = latestQuitDate();
+  if (!isDate(quitOn) || quitOn < today || quitOn > latest) {
+    go("/provider/settings", { error: "Choose a quit date from today through the next year." });
+  }
+  if (reason.length < 4 || reason.length > 400) {
+    go("/provider/settings", { error: "Write a short reason for closing the desk." });
+  }
+  const user = one<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", session.uid);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    go("/provider/settings", { error: "That password does not match." });
+  }
+  const current = one<{ quit_on: string; closed_at: string }>("SELECT quit_on, closed_at FROM providers WHERE id = ?", session.providerId);
+  if (current?.closed_at) go("/provider/settings", { error: "This desk is already closed." });
+  if (current?.quit_on && current.quit_on <= today) {
+    go("/provider/settings", { error: "The quit date has arrived. This desk can no longer be changed or re-opened." });
+  }
+  run("UPDATE providers SET quit_on = ?, quit_reason = ? WHERE id = ?", quitOn, reason, session.providerId);
+  const quit = settleDesk(session.providerId);
+  if (quit.phase === "closed") {
+    refresh();
+    await clearSession();
+    redirect(`/?error=${encodeURIComponent(`This desk closed on ${formatDate(quit.closedAt)}. Sign-in has stopped.`)}`);
+  }
+  refresh();
+  const count = quit.open.length;
+  go("/provider/settings", {
+    notice:
+      count === 0
+        ? `Quit is set for ${formatDate(quitOn)}. Payments due by that day are already closed.`
+        : `Quit is set for ${formatDate(quitOn)}. Close ${count} payment${count === 1 ? "" : "s"} before that day. The desk stays open until then.`,
+  });
+}
+
+export async function reopenDesk(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner of this desk can re-open it." });
+  const password = String(formData.get("password") ?? "");
+  const user = one<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", session.uid);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    go("/provider/settings", { error: "That password does not match." });
+  }
+  const today = todayISO();
+  const current = one<{ quit_on: string; closed_at: string }>("SELECT quit_on, closed_at FROM providers WHERE id = ?", session.providerId);
+  if (current?.closed_at) go("/provider/settings", { error: "This desk is already closed." });
+  if (!current?.quit_on) go("/provider/settings", { error: "This desk is not set to close." });
+  if (current.quit_on <= today) {
+    go("/provider/settings", { error: "The quit date has arrived. This desk can no longer be re-opened." });
+  }
+  run("UPDATE providers SET quit_on = '', quit_reason = '' WHERE id = ?", session.providerId);
+  refresh();
+  go("/provider/settings", { notice: "This desk is open again. The close request has been taken back." });
+}
+
 export async function changePassword(formData: FormData) {
   const session = await requireRole("customer");
   const currentPassword = String(formData.get("current_password") ?? "");
@@ -1371,6 +1491,7 @@ export async function registerProvider(
   const trialEnds = addDays(todayISO(), CATALOG[plan].trialDays);
   const db = getDb();
   let userId = 0;
+  let providerId = 0;
   db.exec("BEGIN");
   try {
     const provider = run(
@@ -1392,13 +1513,14 @@ export async function registerProvider(
       pincode,
       term,
     );
+    providerId = Number(provider.lastInsertRowid);
     const user = run(
       "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",
       email,
       hashPassword(password),
       name,
       nowStamp(),
-      Number(provider.lastInsertRowid),
+      providerId,
     );
     userId = Number(user.lastInsertRowid);
     db.exec("COMMIT");
@@ -1409,9 +1531,28 @@ export async function registerProvider(
   await setSession(userId);
   const chosen = CATALOG[plan];
   const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
+  const fee = formatInr(termQuote(chosen.price, term).due);
+  const welcomeTitle = "Welcome to Zignal Connect";
+  const welcomeBody = `Your desk for ${isp} is open on ${chosen.label} ${termLabel.toLowerCase()}. The trial runs until ${formatDate(trialEnds)}. The first desk fee of ${fee} is booked for that day. No card is charged during the trial. Sign in with ${email} and the password you chose.`;
+  postDeskWelcome(providerId, welcomeTitle, welcomeBody);
+  let welcomeNote = " A copy of the welcome note is on the desk overview.";
+  if (mailConfigured()) {
+    const welcome = deskWelcomeMail({
+      ispName: isp,
+      ownerName: name,
+      email,
+      plan: `${chosen.label} · ${termLabel}`,
+      trialEnds: formatDate(trialEnds),
+      fee,
+    });
+    const mailed = await sendMail(email, welcome.subject, welcome.text, welcome.html);
+    welcomeNote = mailed.ok
+      ? ` A welcome email was sent to ${email}.`
+      : " The welcome email could not be sent. A copy is on the desk overview.";
+  }
   redirect(
     `/provider/upgrade?notice=${encodeURIComponent(
-      `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.`,
+      `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.${welcomeNote}`,
     )}`,
   );
 }
@@ -2859,6 +3000,57 @@ export async function saveBrand(formData: FormData) {
   );
   refresh();
   go("/provider/upgrade", { notice: "ISP details saved. New subscriber receipts use this GSTIN and address." });
+}
+
+export async function saveDeskMail(formData: FormData) {
+  await requireOperator();
+  const on = String(formData.get("desk_mail_on") ?? "") === "0" ? 0 : 1;
+  const soonTitle = readText(formData, "soon_title");
+  const soonBody = readText(formData, "soon_body");
+  const dueTitle = readText(formData, "due_title");
+  const dueBody = readText(formData, "due_body");
+  if (soonTitle.length < 3 || dueTitle.length < 3 || soonTitle.length > 80 || dueTitle.length > 80) {
+    go("/zignal/mail", { error: "Each title needs a few words, and no more than 80 characters." });
+  }
+  if (soonBody.length < 3 || dueBody.length < 3 || soonBody.length > 400 || dueBody.length > 400) {
+    go("/zignal/mail", { error: "Each message needs a few words, and no more than 400 characters." });
+  }
+  run(
+    `UPDATE platform_profile
+     SET desk_mail_on = ?, desk_soon_title = ?, desk_soon_body = ?, desk_due_title = ?, desk_due_body = ?
+     WHERE id = 1`,
+    on,
+    soonTitle,
+    soonBody,
+    dueTitle,
+    dueBody,
+  );
+  refresh();
+  go("/zignal/mail", { notice: "Desk mail saved." });
+}
+
+export async function sendDeskMail(formData: FormData) {
+  await requireOperator();
+  const target = readText(formData, "provider_id");
+  const channel = readText(formData, "channel");
+  const title = readText(formData, "title");
+  const body = readText(formData, "body");
+  if (channel !== "email") go("/zignal/mail", { error: "Email is the only medium connected. Message and WhatsApp are not connected yet." });
+  if (title.length < 3 || body.length < 3) go("/zignal/mail", { error: "A note needs a title and a message." });
+  if (title.length > 80 || body.length > 400) go("/zignal/mail", { error: "That note is too long." });
+  if (!mailConfigured()) go("/zignal/mail", { error: "Email is not connected yet, so the note was not sent." });
+  const ids = target === "all" ? listOpenDesks().map((desk) => desk.id) : [Number(target)];
+  if (ids.length === 0 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    go("/zignal/mail", { error: "Choose a desk." });
+  }
+  let sent = 0;
+  for (const id of ids) {
+    const result = await sendDeskNote(id, title, body);
+    if (result.ok) sent += 1;
+  }
+  refresh();
+  if (sent === 0) go("/zignal/mail", { error: "The note could not be sent." });
+  go("/zignal/mail", { notice: sent === 1 ? "The note was sent to 1 desk." : `The note was sent to ${sent} desks.` });
 }
 
 export async function savePlatformProfile(formData: FormData) {

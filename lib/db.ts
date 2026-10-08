@@ -34,6 +34,9 @@ export function getDb() {
   if (!names.has("login_password")) {
     globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN login_password TEXT NOT NULL DEFAULT ''");
   }
+  if (!names.has("last_login")) {
+    globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN last_login TEXT NOT NULL DEFAULT ''");
+  }
   if (!names.has("theme")) {
     globalForDb.lumenDb.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'");
   }
@@ -71,6 +74,16 @@ export function getDb() {
     );
   `);
   ensureReceiptSchema(globalForDb.lumenDb);
+  const profileColumns = columnNames(globalForDb.lumenDb, "platform_profile");
+  if (profileColumns.size > 0 && !profileColumns.has("desk_mail_on")) {
+    globalForDb.lumenDb.exec("ALTER TABLE platform_profile ADD COLUMN desk_mail_on INTEGER NOT NULL DEFAULT 1");
+  }
+  if (profileColumns.size > 0 && !profileColumns.has("desk_soon_title")) {
+    globalForDb.lumenDb.exec("ALTER TABLE platform_profile ADD COLUMN desk_soon_title TEXT NOT NULL DEFAULT ''");
+    globalForDb.lumenDb.exec("ALTER TABLE platform_profile ADD COLUMN desk_soon_body TEXT NOT NULL DEFAULT ''");
+    globalForDb.lumenDb.exec("ALTER TABLE platform_profile ADD COLUMN desk_due_title TEXT NOT NULL DEFAULT ''");
+    globalForDb.lumenDb.exec("ALTER TABLE platform_profile ADD COLUMN desk_due_body TEXT NOT NULL DEFAULT ''");
+  }
   ensureComplaintDesk(globalForDb.lumenDb);
   ensureComplaintOutcomes(globalForDb.lumenDb);
   seedDemoComplaints(globalForDb.lumenDb);
@@ -116,6 +129,28 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
     CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash);
+    CREATE TABLE IF NOT EXISTS login_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      account_kind TEXT NOT NULL,
+      email TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes(user_id, account_kind);
+    CREATE TABLE IF NOT EXISTS desk_notices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'email',
+      stage TEXT NOT NULL DEFAULT '',
+      cycle_date TEXT NOT NULL DEFAULT ''
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_desk_notice_once ON desk_notices(provider_id, stage, cycle_date) WHERE stage != '';
   `);
   const resetColumns = columnNames(globalForDb.lumenDb, "password_resets");
   if (resetColumns.size > 0 && !resetColumns.has("account_kind")) {
@@ -231,6 +266,9 @@ function migrate(db: DatabaseSync) {
   if (!userColumns.has("login_password")) {
     db.exec("ALTER TABLE users ADD COLUMN login_password TEXT NOT NULL DEFAULT ''");
   }
+  if (!userColumns.has("last_login")) {
+    db.exec("ALTER TABLE users ADD COLUMN last_login TEXT NOT NULL DEFAULT ''");
+  }
   if (!columnNames(db, "customers").has("area")) {
     db.exec("ALTER TABLE customers ADD COLUMN area TEXT NOT NULL DEFAULT ''");
   }
@@ -264,6 +302,17 @@ function migrate(db: DatabaseSync) {
       sla_hours INTEGER NOT NULL DEFAULT 24
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_renewal_once ON reminders(customer_id, stage, cycle_date) WHERE stage != '';
+    CREATE TABLE IF NOT EXISTS desk_notices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'email',
+      stage TEXT NOT NULL DEFAULT '',
+      cycle_date TEXT NOT NULL DEFAULT ''
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_desk_notice_once ON desk_notices(provider_id, stage, cycle_date) WHERE stage != '';
   `);
   if (!columnNames(db, "plans").has("provider_id")) {
     const planCount = db.prepare("SELECT COUNT(*) AS n FROM plans").get() as { n: number };
@@ -402,6 +451,9 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (!billColumns.has("line_secret")) db.exec("ALTER TABLE providers ADD COLUMN line_secret TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("line_db")) db.exec("ALTER TABLE providers ADD COLUMN line_db TEXT NOT NULL DEFAULT ''");
   if (!billColumns.has("line_coa")) db.exec("ALTER TABLE providers ADD COLUMN line_coa TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("quit_on")) db.exec("ALTER TABLE providers ADD COLUMN quit_on TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("quit_reason")) db.exec("ALTER TABLE providers ADD COLUMN quit_reason TEXT NOT NULL DEFAULT ''");
+  if (!billColumns.has("closed_at")) db.exec("ALTER TABLE providers ADD COLUMN closed_at TEXT NOT NULL DEFAULT ''");
 
   const orderColumns = columnNames(db, "upgrade_orders");
   if (orderColumns.size > 0 && !orderColumns.has("billing_term")) {

@@ -1,5 +1,8 @@
 import { logout } from "@/lib/actions";
-import { requireRole } from "@/lib/auth";
+import { clearSession, requireRole } from "@/lib/auth";
+import { settleDesk } from "@/lib/desk-close";
+import { formatDate } from "@/lib/format";
+import { redirect } from "next/navigation";
 import { CATALOG } from "@/lib/entitlements";
 import { listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
 import { AdminNav } from "@/components/admin-nav";
@@ -9,6 +12,11 @@ import { SubmitButton } from "@/components/submit-button";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("admin");
+  const quit = settleDesk(session.providerId);
+  if (quit.phase === "closed") {
+    await clearSession();
+    redirect(`/?error=${encodeURIComponent(`This desk closed on ${formatDate(quit.closedAt)}. Sign-in has stopped.`)}`);
+  }
   const plans = listPlans(session.providerId);
   const charges = listChargeCatalogue(session.providerId);
   const discounts = listDiscountCatalogue(session.providerId);
@@ -33,7 +41,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </SubmitButton>
         </form>
       </aside>
-      <div className="app-main">{children}</div>
+      <div className="app-main">
+        {quit.phase === "waiting" || quit.phase === "scheduled" ? (
+          <p className="quit-banner">
+            {quit.phase === "waiting"
+              ? `This desk was set to close on ${formatDate(quit.quitOn)}. That day has arrived, so it can no longer be re-opened. It stays open until ${quit.open.length} payment${quit.open.length === 1 ? "" : "s"} ${quit.open.length === 1 ? "is" : "are"} closed.`
+              : `This desk is set to close on ${formatDate(quit.quitOn)}. You can re-open it before that day.`}{" "}
+            {session.isOwner ? <a href="/provider/settings">Review it in Settings.</a> : "Only the owner can re-open it."}
+          </p>
+        ) : null}
+        {children}
+      </div>
       <DeskChat
         plans={plans.length}
         planNames={plans.map((plan) => plan.name).join(", ")}

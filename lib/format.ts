@@ -16,6 +16,14 @@ export function nowStamp() {
   return `${formatISO(date)} ${hh}:${mm}`;
 }
 
+export function nowClock() {
+  const date = new Date();
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${formatISO(date)} ${hh}:${mi}:${ss}`;
+}
+
 export function addDays(iso: string, days: number) {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(y, m - 1, d);
@@ -62,6 +70,17 @@ export function formatDate(iso: string) {
 export function formatStamp(stamp: string) {
   const [date, time] = stamp.split(" ");
   return time ? `${formatDate(date)} · ${time}` : formatDate(date);
+}
+
+export function formatClock(stamp: string) {
+  const trimmed = stamp.trim();
+  if (!trimmed) return "";
+  const [date, time = ""] = trimmed.split(" ");
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  const day = String(d).padStart(2, "0");
+  const month = new Date(y, m - 1, d).toLocaleDateString("en-IN", { month: "short" });
+  const [hh = "00", mi = "00", ss = "00"] = time.split(":");
+  return `${day} ${month} ${y}, ${hh.padStart(2, "0")}:${mi.padStart(2, "0")}:${ss.padStart(2, "0")}`;
 }
 
 export function formatInr(amount: number) {

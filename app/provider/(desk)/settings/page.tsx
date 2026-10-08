@@ -1,5 +1,7 @@
 import { changeDeskPassword, saveDeskPayment, saveDeskSettings, saveLineLink, saveReminderMessages } from "@/lib/actions";
+import { DeskQuitPanel } from "@/components/desk-quit";
 import { requireRole } from "@/lib/auth";
+import { settleDesk } from "@/lib/desk-close";
 import { NetworkBoxFields } from "@/components/network-box";
 import { SavedPaymentFields } from "@/components/saved-payment";
 import { SubmitButton } from "@/components/submit-button";
@@ -24,7 +26,7 @@ export default async function DeskSettings({
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Your name, mobile, theme, password, the network box, payment preference, and the two renewal reminders.</p>
+          <p>Your name, mobile, theme, password, the network box, payment preference, the two renewal reminders, and closing this desk.</p>
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
@@ -75,9 +77,12 @@ export default async function DeskSettings({
       </section>
       <article className="card" style={{ marginTop: 14 }}>
         <h2>Network box</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
-          Connect MikroTik or RADIUS so a subscriber line follows the desk. Active turns it on. Paused, Disconnect, Collection, and Write off turn it off. The router API uses port 8728. RADIUS uses the database port, usually 3306, and a disconnect message on port 3799 when you add that secret. The desk reaches this address from the server. A box that only answers inside the office will not change the line until that address is reachable. The fiber box is not connected from this page. Without a network box, the desk still saves the status.
-        </p>
+        <ul className="fine info-list" style={{ margin: "8px 0 16px" }}>
+          <li>Choose MikroTik when you have a router address, username, and password. The port is 8728.</li>
+          <li>Choose RADIUS only when you also have a database name. The port is 3306.</li>
+          <li>Active turns the line on. Paused, Disconnect, Collection, and Write off turn it off.</li>
+          <li>Use an address this website can reach. Leave this blank and the desk still saves the status.</li>
+        </ul>
         {session.isOwner ? (
           <NetworkBoxFields
             action={saveLineLink}
@@ -154,6 +159,7 @@ export default async function DeskSettings({
           </div>
         )}
       </article>
+      <DeskQuitPanel owner={session.isOwner} quit={settleDesk(session.providerId)} />
     </>
   );
 }

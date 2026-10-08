@@ -37,19 +37,23 @@ export function NetworkBoxFields({
     });
   }
 
+  const connection = (
+    <label className="field">
+      <span>Connection</span>
+      <select name="line_kind" value={chosen} onChange={(event) => choose(event.target.value as Kind)}>
+        <option value="">Not connected</option>
+        <option value="mikrotik">MikroTik</option>
+        <option value="radius">RADIUS</option>
+      </select>
+    </label>
+  );
+
   return (
     <form action={action} className="stack">
-      <label className="field">
-        <span>Connection</span>
-        <select name="line_kind" value={chosen} onChange={(event) => choose(event.target.value as Kind)}>
-          <option value="">Not connected</option>
-          <option value="mikrotik">MikroTik</option>
-          <option value="radius">RADIUS</option>
-        </select>
-      </label>
       {chosen ? (
         <>
-          <div className="row-2">
+          <div className="network-line">
+            {connection}
             <label className="field">
               <span>Address</span>
               <input
@@ -70,16 +74,18 @@ export function NetworkBoxFields({
               />
             </label>
           </div>
-          <label className="field">
-            <span>Login name</span>
-            <input name="line_user" defaultValue={user} autoComplete="off" />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input name="line_secret" type="password" autoComplete="new-password" placeholder={hasSecret ? "Saved. Leave blank to keep it." : ""} />
-          </label>
+          <div className="network-pair">
+            <label className="field">
+              <span>Login name</span>
+              <input name="line_user" defaultValue={user} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input name="line_secret" type="password" autoComplete="new-password" placeholder={hasSecret ? "Saved. Leave blank to keep it." : ""} />
+            </label>
+          </div>
           {chosen === "radius" ? (
-            <>
+            <div className="network-pair">
               <label className="field">
                 <span>Database name</span>
                 <input name="line_db" defaultValue={database} autoComplete="off" />
@@ -88,16 +94,19 @@ export function NetworkBoxFields({
                 <span>Disconnect secret</span>
                 <input name="line_coa" type="password" autoComplete="new-password" placeholder={hasCoa ? "Saved. Leave blank to keep it." : ""} />
               </label>
-              <p className="fine">
-                Leave a password blank to keep the one already saved. The disconnect secret drops a session that is already online. Without it, RADIUS still blocks the next login.
-              </p>
-            </>
-          ) : (
-            <p className="fine">Leave the password blank to keep the one already saved. Port 8728 is the router API.</p>
-          )}
+            </div>
+          ) : null}
+          <p className="fine">
+            {chosen === "radius"
+              ? "Leave a password blank to keep the saved one. The disconnect secret is optional."
+              : "Leave a password blank to keep the saved one."}
+          </p>
         </>
       ) : (
-        <p className="fine">The desk still saves line status. The network line does not change.</p>
+        <>
+          {connection}
+          <p className="fine">The desk still saves line status. The network line does not change.</p>
+        </>
       )}
       <SubmitButton className="btn small">Save network box</SubmitButton>
     </form>

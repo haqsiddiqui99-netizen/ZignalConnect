@@ -1,5 +1,7 @@
 import { logout } from "@/lib/actions";
-import { requireRole } from "@/lib/auth";
+import { clearSession, requireRole } from "@/lib/auth";
+import { settleDesk } from "@/lib/desk-close";
+import { redirect } from "next/navigation";
 import { PortalNav } from "@/components/portal-nav";
 import { SubscriberChat } from "@/components/subscriber-chat";
 import { SubmitButton } from "@/components/submit-button";
@@ -18,6 +20,11 @@ function namedLine(count: number, singular: string, plural: string, names: strin
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("customer");
+  const quit = settleDesk(session.providerId);
+  if (quit.phase === "closed") {
+    await clearSession();
+    redirect(`/?error=${encodeURIComponent(`This desk closed on ${formatDate(quit.closedAt)}. Sign-in has stopped.`)}`);
+  }
   const brand = portalBrand(session.productPlan, session.brandName, session.logoLetter);
   const person = getSubscriberByUserId(session.uid);
   const charges = person ? listCustomerCharges(person.id) : [];

@@ -1,10 +1,10 @@
 import { billCycleLabel } from "@/lib/bill-cycle";
 import { invoiceFor } from "@/lib/charges";
 import { many, one, run } from "@/lib/db";
-import { allows } from "@/lib/entitlements";
-import { daysUntil, formatDate, formatInr, formatSpeed, nowStamp } from "@/lib/format";
+import { BILL_TERMS, CATALOG, allows, isBillTerm, isProductPlan, termQuote, type BillTerm, type ProductPlan } from "@/lib/entitlements";
+import { addMonths, daysUntil, formatDate, formatInr, formatSpeed, nowStamp, todayISO } from "@/lib/format";
 import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
-import { getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
+import { deskMailSettings, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
 
 type DueLine = {
   id: number;
@@ -128,14 +128,119 @@ export async function issueRenewalReminders(providerId: number) {
   return { emailed, failed };
 }
 
+function nextDeskFeeDate(trialEnds: string, opened: string, term: BillTerm) {
+  const months = term === "yearly" ? 12 : term === "quarterly" ? 3 : 1;
+  const today = todayISO();
+  const trial = trialEnds.slice(0, 10);
+  if (trial && daysUntil(trial) >= 0) return trial;
+  let due = (trial || opened).slice(0, 10);
+  if (!due) return "";
+  for (let guard = 0; due < today && guard < 240; guard += 1) due = addMonths(due, months);
+  return due;
+}
+
+export function postDeskWelcome(providerId: number, title: string, body: string) {
+  if (one("SELECT id FROM desk_notices WHERE provider_id = ? AND stage = 'onboard'", providerId)) return;
+  run(
+    "INSERT INTO desk_notices (provider_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', 'onboard', '')",
+    providerId,
+    title.slice(0, 80),
+    body.slice(0, 400),
+    nowStamp(),
+  );
+}
+
+export async function issueDeskFeeReminders(providerId: number) {
+  const settings = deskMailSettings();
+  if (!settings.on) return { emailed: 0, failed: 0 };
+  const provider = getProvider(providerId);
+  if (!provider || provider.closed_at) return { emailed: 0, failed: 0 };
+  const owner = one<{ email: string; name: string }>(
+    "SELECT email, name FROM users WHERE provider_id = ? AND is_owner = 1 LIMIT 1",
+    providerId,
+  );
+  if (!owner?.email) return { emailed: 0, failed: 0 };
+  const plan: ProductPlan = isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
+  const term: BillTerm = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
+  const dueOn = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
+  if (!dueOn) return { emailed: 0, failed: 0 };
+  const days = daysUntil(dueOn);
+  const stage = days === 3 ? "soon" : days === 0 ? "due" : null;
+  if (!stage) return { emailed: 0, failed: 0 };
+  if (one("SELECT id FROM desk_notices WHERE provider_id = ? AND stage = ? AND cycle_date = ?", providerId, stage, dueOn)) {
+    return { emailed: 0, failed: 0 };
+  }
+  const quote = termQuote(CATALOG[plan].price, term);
+  const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
+  const fields = {
+    name: owner.name,
+    plan: `${CATALOG[plan].label} · ${termLabel}`,
+    date: formatDate(dueOn),
+    amount: formatInr(quote.due),
+    isp: provider.name,
+  };
+  const title = fillReminder(stage === "soon" ? settings.soonTitle : settings.dueTitle, fields).slice(0, 80);
+  const body = fillReminder(stage === "soon" ? settings.soonBody : settings.dueBody, fields).slice(0, 400);
+  if (!mailConfigured()) return { emailed: 0, failed: 0 };
+  const mail = renewalMail({ ispName: provider.name, signoff: "Zignal Connect", title, body });
+  const sent = await sendMail(owner.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) return { emailed: 0, failed: 1 };
+  run(
+    "INSERT INTO desk_notices (provider_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', ?, ?)",
+    providerId,
+    title,
+    body,
+    nowStamp(),
+    stage,
+    dueOn,
+  );
+  return { emailed: 1, failed: 0 };
+}
+
+export async function sendDeskNote(providerId: number, title: string, body: string) {
+  const provider = getProvider(providerId);
+  if (!provider || provider.closed_at) return { ok: false as const };
+  const owner = one<{ email: string; name: string }>(
+    "SELECT email, name FROM users WHERE provider_id = ? AND is_owner = 1 LIMIT 1",
+    providerId,
+  );
+  if (!owner?.email || !mailConfigured()) return { ok: false as const };
+  const plan: ProductPlan = isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
+  const term: BillTerm = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
+  const dueOn = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
+  const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
+  const fields = {
+    name: owner.name,
+    plan: `${CATALOG[plan].label} · ${termLabel}`,
+    date: dueOn ? formatDate(dueOn) : "",
+    amount: formatInr(termQuote(CATALOG[plan].price, term).due),
+    isp: provider.name,
+  };
+  const filledTitle = fillReminder(title, fields).slice(0, 80);
+  const filledBody = fillReminder(body, fields).slice(0, 400);
+  const mail = renewalMail({ ispName: provider.name, signoff: "Zignal Connect", title: filledTitle, body: filledBody });
+  const sent = await sendMail(owner.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) return { ok: false as const };
+  run(
+    "INSERT INTO desk_notices (provider_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', 'custom', ?)",
+    providerId,
+    filledTitle,
+    filledBody,
+    nowStamp(),
+    `${Date.now()}-${providerId}`,
+  );
+  return { ok: true as const };
+}
+
 export async function runMorningReminders() {
   const providers = many<{ id: number }>("SELECT id FROM providers");
   let emailed = 0;
   let failed = 0;
   for (const provider of providers) {
     const result = await issueRenewalReminders(provider.id);
-    emailed += result.emailed;
-    failed += result.failed;
+    const desk = await issueDeskFeeReminders(provider.id);
+    emailed += result.emailed + desk.emailed;
+    failed += result.failed + desk.failed;
   }
   return { emailed, failed };
 }
