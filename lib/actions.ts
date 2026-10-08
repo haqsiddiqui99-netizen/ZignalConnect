@@ -1534,22 +1534,25 @@ export async function registerProvider(
   const fee = formatInr(termQuote(chosen.price, term).due);
   const welcomeTitle = "Welcome to Zignal Connect";
   const welcomeBody = `Your desk for ${isp} is open on ${chosen.label} ${termLabel.toLowerCase()}. The trial runs until ${formatDate(trialEnds)}. The first desk fee of ${fee} is booked for that day. No card is charged during the trial. Sign in with ${email} and the password you chose.`;
-  postDeskWelcome(providerId, welcomeTitle, welcomeBody);
-  let welcomeNote = " A copy of the welcome note is on the desk overview.";
-  if (mailConfigured()) {
-    const welcome = deskWelcomeMail({
-      ispName: isp,
-      ownerName: name,
-      email,
-      plan: `${chosen.label} · ${termLabel}`,
-      trialEnds: formatDate(trialEnds),
-      fee,
-    });
-    const mailed = await sendMail(email, welcome.subject, welcome.text, welcome.html);
-    welcomeNote = mailed.ok
-      ? ` A welcome email was sent to ${email}.`
-      : " The welcome email could not be sent. A copy is on the desk overview.";
+  try {
+    postDeskWelcome(providerId, welcomeTitle, welcomeBody);
+  } catch (error) {
+    console.error("desk welcome note", error instanceof Error ? error.message : "failed");
   }
+  const welcome = deskWelcomeMail({
+    ispName: isp,
+    ownerName: name,
+    email,
+    plan: `${chosen.label} · ${termLabel}`,
+    trialEnds: formatDate(trialEnds),
+    fee,
+  });
+  const mailed = await sendMail(email, welcome.subject, welcome.text, welcome.html);
+  const welcomeNote = mailed.ok
+    ? ` A welcome email was sent to ${email}.`
+    : mailed.reason === "unconfigured"
+      ? " Welcome email was not sent. The mail account is not connected on the server."
+      : " The welcome email could not be sent.";
   redirect(
     `/provider/upgrade?notice=${encodeURIComponent(
       `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.${welcomeNote}`,

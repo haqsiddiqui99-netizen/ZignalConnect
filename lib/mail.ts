@@ -1,3 +1,4 @@
+import dns from "dns";
 import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
@@ -14,8 +15,13 @@ export function siteOrigin() {
   return (process.env.APP_URL || "https://www.zignalconnect.com").replace(/\/$/, "");
 }
 
+function mailSetting(name: string) {
+  const value = (process.env as Record<string, string | undefined>)[name];
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export function mailConfigured() {
-  return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_FROM?.trim());
+  return Boolean(mailSetting("SMTP_HOST") && mailSetting("SMTP_FROM"));
 }
 
 function escapeHtml(value: string) {
@@ -207,18 +213,24 @@ export async function sendMail(
   text: string,
   html?: string,
 ): Promise<{ ok: true } | { ok: false; reason: "unconfigured" | "failed" }> {
-  if (!mailConfigured()) return { ok: false, reason: "unconfigured" };
+  const host = mailSetting("SMTP_HOST");
+  const from = mailSetting("SMTP_FROM");
+  if (!host || !from) return { ok: false, reason: "unconfigured" };
   try {
-    const port = Number(process.env.SMTP_PORT || 587);
-    const user = process.env.SMTP_USER?.trim();
+    const port = Number(mailSetting("SMTP_PORT") || 587);
+    const user = mailSetting("SMTP_USER");
+    dns.setDefaultResultOrder("ipv4first");
     const transport = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
+      host,
       port,
       secure: port === 465,
-      auth: user ? { user, pass: process.env.SMTP_PASS || "" } : undefined,
+      auth: user ? { user, pass: mailSetting("SMTP_PASS") } : undefined,
+      connectionTimeout: 20_000,
+      greetingTimeout: 20_000,
+      socketTimeout: 30_000,
     });
     await transport.sendMail({
-      from: process.env.SMTP_FROM,
+      from,
       to,
       subject,
       text,
@@ -226,7 +238,9 @@ export async function sendMail(
       attachments: html && fs.existsSync(BANNER_PATH) ? [{ filename: "banner.png", path: BANNER_PATH, cid: "zignal-banner" }] : [],
     });
     return { ok: true };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "send failed";
+    console.error(`mail send failed: ${message}`);
     return { ok: false, reason: "failed" };
   }
 }
