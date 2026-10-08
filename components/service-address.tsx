@@ -170,6 +170,7 @@ export function IspPincodeFields({
   addressLabel = "Address",
   required = false,
   openDesk = false,
+  examples = true,
   addressValue,
   onAddress,
 }: {
@@ -181,6 +182,7 @@ export function IspPincodeFields({
   addressLabel?: string;
   required?: boolean;
   openDesk?: boolean;
+  examples?: boolean;
   addressValue?: string;
   onAddress?: (value: string) => void;
 }) {
@@ -211,13 +213,17 @@ export function IspPincodeFields({
             maxLength={6}
             pattern="[0-9]{6}"
             title="6-digit PIN code"
-            placeholder="400001"
+            placeholder={examples ? "400001" : undefined}
             value={place.pin}
             onChange={(event) => void place.onPin(event.target.value)}
           />
         </label>
       </div>
-      <PlaceFields {...place} requiredPlace={required} />
+      <PlaceFields
+        {...place}
+        requiredPlace={required}
+        note={examples ? undefined : "City, state, and country fill in from the PIN code."}
+      />
     </>
   );
 }

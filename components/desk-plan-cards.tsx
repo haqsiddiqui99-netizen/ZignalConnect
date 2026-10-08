@@ -63,7 +63,7 @@ export function DeskPlanCards({
               <ul className="plan-stats">
                 <li>
                   <b>{limitLabel(item.customers)}</b>
-                  <span>customers</span>
+                  <span>subscribers</span>
                 </li>
                 <li>
                   <b>{limitLabel(item.reminders)}</b>
@@ -109,7 +109,7 @@ export function DeskPlanCards({
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.premium_30000.customers)}</b>
-              <span>customers</span>
+              <span>subscribers</span>
             </li>
             <li>
               <b>20</b>

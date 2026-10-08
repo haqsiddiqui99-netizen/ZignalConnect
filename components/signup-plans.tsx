@@ -93,7 +93,7 @@ export function SignupPlans() {
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.pro.customers)}</b>
-              <span>customers</span>
+              <span>subscribers</span>
             </li>
             <li>
               <b>{limitLabel(CATALOG.pro.reminders)}</b>
@@ -135,7 +135,7 @@ export function SignupPlans() {
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.ultra.customers)}</b>
-              <span>customers</span>
+              <span>subscribers</span>
             </li>
             <li>
               <b>{limitLabel(CATALOG.ultra.reminders)}</b>
@@ -180,7 +180,7 @@ export function SignupPlans() {
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(premiumTier.customers)}</b>
-              <span>customers</span>
+              <span>subscribers</span>
             </li>
             <li>
               <b>{limitLabel(premiumTier.staff)}</b>

@@ -66,7 +66,12 @@ export default function PricingPage() {
           plan starts with a 30-day trial.
         </p>
       </section>
-      <section className="site-plans">
+      <section className="plan-band">
+        <div>
+          <p className="site-eyebrow">For internet providers</p>
+          <h2>Corporate Plans</h2>
+        </div>
+        <div className="site-plans">
         {CARDS.map((card) => (
           <article key={card.family} className="card site-card site-plan">
             <div className="plan-card-top">
@@ -83,7 +88,7 @@ export default function PricingPage() {
             <ul className="plan-stats">
               <li>
                 <b>{card.customers}</b>
-                <span>customers</span>
+                <span>subscribers</span>
               </li>
               <li>
                 <b>{card.staff}</b>
@@ -105,6 +110,7 @@ export default function PricingPage() {
             </Link>
           </article>
         ))}
+        </div>
       </section>
       <section className="card site-card">
         <h2>Premium rates</h2>
