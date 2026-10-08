@@ -13,6 +13,17 @@ function blank(field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
   return field.value.trim() === "";
 }
 
+export function markBlankRequired(form: HTMLFormElement) {
+  const fields = Array.from(form.elements).filter(isField);
+  let first: (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) | null = null;
+  for (const field of fields) {
+    const empty = blank(field);
+    field.toggleAttribute("data-empty", empty);
+    if (empty && !first) first = field;
+  }
+  return first;
+}
+
 export function GuardedForm({
   action,
   className,

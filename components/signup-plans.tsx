@@ -56,7 +56,9 @@ export function SignupPlans() {
     <>
       <div className="signup-base">
         <label className="field">
-          <span>Subscriber base</span>
+          <span>
+            Subscriber base <i className="req" aria-hidden="true">*</i>
+          </span>
           <input
             name="subscriber_base"
             type="number"

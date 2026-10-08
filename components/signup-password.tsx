@@ -29,7 +29,9 @@ export function SignupPassword() {
   return (
     <div className="signup-fields">
       <div className="field">
-        <span>Password</span>
+        <span>
+          Password <i className="req" aria-hidden="true">*</i>
+        </span>
         <div className="password-box">
           <input
             name="password"
@@ -79,7 +81,9 @@ export function SignupPassword() {
         </p>
       </div>
       <label className="field">
-        <span>Confirm password</span>
+        <span>
+          Confirm password <i className="req" aria-hidden="true">*</i>
+        </span>
         <input
           name="confirm_password"
           type="password"

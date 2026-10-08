@@ -4,6 +4,61 @@ import { lookupOpenDeskPincode, lookupPincode } from "@/lib/actions";
 import { INDIAN_STATES } from "@/lib/tax";
 import { useRef, useState } from "react";
 
+const COUNTRIES = [
+  "India",
+  "Afghanistan",
+  "Albania",
+  "Algeria",
+  "Argentina",
+  "Australia",
+  "Austria",
+  "Bangladesh",
+  "Belgium",
+  "Bhutan",
+  "Brazil",
+  "Canada",
+  "China",
+  "Denmark",
+  "Egypt",
+  "Finland",
+  "France",
+  "Germany",
+  "Greece",
+  "Indonesia",
+  "Ireland",
+  "Israel",
+  "Italy",
+  "Japan",
+  "Kenya",
+  "Malaysia",
+  "Maldives",
+  "Mexico",
+  "Nepal",
+  "Netherlands",
+  "New Zealand",
+  "Nigeria",
+  "Norway",
+  "Pakistan",
+  "Philippines",
+  "Poland",
+  "Portugal",
+  "Qatar",
+  "Saudi Arabia",
+  "Singapore",
+  "South Africa",
+  "South Korea",
+  "Spain",
+  "Sri Lanka",
+  "Sweden",
+  "Switzerland",
+  "Thailand",
+  "Turkey",
+  "United Arab Emirates",
+  "United Kingdom",
+  "United States",
+  "Vietnam",
+];
+
 function usePinPlace(pincode: string, city: string, state: string, country: string, openDesk = false) {
   const [pin, setPin] = useState(pincode);
   const [cityName, setCityName] = useState(city);
@@ -48,7 +103,13 @@ function PlaceFields({
   note,
   requiredPlace = true,
   hint = true,
-}: ReturnType<typeof usePinPlace> & { requiredPlace?: boolean; hint?: boolean }) {
+  countryChoices,
+}: ReturnType<typeof usePinPlace> & { requiredPlace?: boolean; hint?: boolean; countryChoices?: readonly string[] }) {
+  const countries = countryChoices
+    ? countryName && !countryChoices.includes(countryName)
+      ? [countryName, ...countryChoices]
+      : countryChoices
+    : [];
   return (
     <>
       <div className="isp-line three">
@@ -73,7 +134,15 @@ function PlaceFields({
           <span>
             Country <i className="req" aria-hidden="true">*</i>
           </span>
-          <input name="country" required minLength={2} maxLength={40} value={countryName} onChange={(event) => setCountryName(event.target.value)} />
+          {countryChoices ? (
+            <select name="country" required value={countryName} onChange={(event) => setCountryName(event.target.value)}>
+              {countries.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          ) : (
+            <input name="country" required minLength={2} maxLength={40} value={countryName} onChange={(event) => setCountryName(event.target.value)} />
+          )}
         </label>
       </div>
       {note ? <p className="fine">{note}</p> : hint ? <p className="fine">City, state, and country fill in from the PIN code. You can still change them.</p> : null}
@@ -191,7 +260,9 @@ export function IspPincodeFields({
     <>
       <div className="row-2">
         <label className="field">
-          <span>{addressLabel}</span>
+          <span>
+            {addressLabel} {required ? <i className="req" aria-hidden="true">*</i> : null}
+          </span>
           {onAddress ? (
             <input
               name="address"
@@ -205,7 +276,9 @@ export function IspPincodeFields({
           )}
         </label>
         <label className="field">
-          <span>PIN code</span>
+          <span>
+            PIN code {required ? <i className="req" aria-hidden="true">*</i> : null}
+          </span>
           <input
             name="pincode"
             inputMode="numeric"
@@ -222,7 +295,8 @@ export function IspPincodeFields({
       <PlaceFields
         {...place}
         requiredPlace={required}
-        note={examples ? undefined : "City, state, and country fill in from the PIN code."}
+        countryChoices={openDesk ? COUNTRIES : undefined}
+        note={examples ? place.note : "City, state, and country fill in from the PIN code."}
       />
     </>
   );

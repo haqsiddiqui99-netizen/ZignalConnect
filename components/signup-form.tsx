@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type FocusEvent, type FormEvent } from "react";
 import { registerProvider } from "@/lib/actions";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { IspPincodeFields } from "@/components/service-address";
 import { SignupPassword } from "@/components/signup-password";
 import { SignupPlans } from "@/components/signup-plans";
+import { markBlankRequired } from "@/components/guarded-form";
 
 export function SignupForm() {
   const [state, formAction] = useActionState(registerProvider, null);
@@ -24,21 +25,60 @@ export function SignupForm() {
     document.querySelector(".signup .banner")?.scrollIntoView({ block: "nearest" });
   }, [state]);
 
+  function onBlur(event: FocusEvent<HTMLFormElement>) {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) return;
+    const empty = field.required && !field.disabled && field.type !== "radio" && field.type !== "checkbox" && field.type !== "hidden" && field.value.trim() === "";
+    field.toggleAttribute("data-empty", empty);
+  }
+
+  function onInput(event: FormEvent<HTMLFormElement>) {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) return;
+    if (field.value.trim() !== "") field.removeAttribute("data-empty");
+  }
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const first = markBlankRequired(form);
+    if (first) {
+      event.preventDefault();
+      first.focus();
+      return;
+    }
+    const bad = Array.from(form.elements).find(
+      (item): item is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+        (item instanceof HTMLInputElement || item instanceof HTMLSelectElement || item instanceof HTMLTextAreaElement) &&
+        !item.disabled &&
+        item.willValidate &&
+        !item.checkValidity(),
+    );
+    if (!bad) return;
+    event.preventDefault();
+    bad.reportValidity();
+  }
+
   return (
-    <form action={formAction} className="stack">
+    <form action={formAction} className="stack" noValidate onBlur={onBlur} onInput={onInput} onChange={onInput} onSubmit={onSubmit}>
       <Banner error={state?.error} />
       <div className="signup-fields">
         <label className="field">
-          <span>ISP name</span>
-          <input name="isp_name" required value={isp} onChange={(event) => setIsp(event.target.value)} />
+          <span>
+            ISP name <i className="req" aria-hidden="true">*</i>
+          </span>
+          <input name="isp_name" required value={isp} onChange={(event) => setIsp(event.target.value)} placeholder="ISP name" />
         </label>
         <label className="field">
-          <span>Your name</span>
-          <input name="name" required value={name} onChange={(event) => setName(event.target.value)} />
+          <span>
+            Your name <i className="req" aria-hidden="true">*</i>
+          </span>
+          <input name="name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Full name" />
         </label>
         <label className="field">
-          <span>Email</span>
-          <input name="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <span>
+            Email <i className="req" aria-hidden="true">*</i>
+          </span>
+          <input name="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email to receive notification" />
         </label>
         <label className="field">
           <span>Support mobile</span>
@@ -49,7 +89,9 @@ export function SignupForm() {
           <input name="gstin" autoCapitalize="characters" value={gstin} onChange={(event) => setGstin(event.target.value)} />
         </label>
         <label className="field">
-          <span>Logo letter</span>
+          <span>
+            Logo letter <i className="req" aria-hidden="true">*</i>
+          </span>
           <input
             name="logo_letter"
             required
