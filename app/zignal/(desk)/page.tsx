@@ -1,7 +1,7 @@
 import { ProviderTable, type ProviderRow } from "@/components/provider-table";
 import { requireOperator } from "@/lib/auth";
 import { BILL_TERMS, CATALOG, isBillTerm, type ProductPlan } from "@/lib/entitlements";
-import { addMonths, daysUntil, formatClock, formatDate, formatInr, todayISO } from "@/lib/format";
+import { addMonths, daysUntil, formatClock, formatDate, formatInr, isDate, todayISO } from "@/lib/format";
 import { operatorDesk } from "@/lib/queries";
 
 function trialText(ends: string) {
@@ -36,7 +36,9 @@ export default async function OperatorHome() {
     const termId = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
     const term = BILL_TERMS.find((item) => item.id === termId)?.label ?? "Monthly";
     const plan = isPlan(provider.product_plan) ? CATALOG[provider.product_plan].label : provider.product_plan;
-    const due = provider.closed_at ? "" : paymentDue(provider.trial_ends, provider.created_at, termId);
+    const cycleDue = provider.closed_at ? "" : paymentDue(provider.trial_ends, provider.created_at, termId);
+    const promised = isDate(provider.promise_on) && provider.promise_on >= todayISO();
+    const due = promised ? provider.promise_on : cycleDue;
     const desk = provider.closed_at
       ? `Closed ${formatDate(provider.closed_at)}`
       : provider.quit_on && provider.quit_on <= todayISO()
@@ -61,6 +63,7 @@ export default async function OperatorHome() {
       trialSort: provider.trial_ends,
       paymentDue: due ? formatClock(due) : "—",
       paymentDueSort: due,
+      paymentNote: promised ? "Promise to Pay" : "",
       fee: formatInr(provider.fee),
       staff: String(provider.staff),
       support: provider.support_phone || "—",

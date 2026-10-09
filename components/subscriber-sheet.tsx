@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { billCycleLabel } from "@/lib/bill-cycle";
-import { formatDate } from "@/lib/format";
+import { formatDate, isDate } from "@/lib/format";
 import { lineStatusLabel } from "@/lib/line-status";
 import { subscriberCredit, type Subscriber } from "@/lib/queries";
 
@@ -44,6 +44,7 @@ export function SubscriberSheet({ person, showArea }: { person: Subscriber; show
         <Fact label="Bill cycle" value={billCycleLabel(person.bill_cycle)} />
         <Fact label="Installation date" value={formatDate(person.installation_date)} />
         <Fact label="Renewal date" value={formatDate(person.renew_date)} />
+        <Fact label="Promise to pay" value={isDate(person.promise_on) ? formatDate(person.promise_on) : ""} />
         <Fact label="PPPoE username" value={person.line_name} />
         <Fact label="Notes" value={person.notes} wide />
       </dl>

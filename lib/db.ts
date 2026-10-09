@@ -650,7 +650,9 @@ function ensureReceiptSchema(db: DatabaseSync) {
       mode TEXT NOT NULL CHECK(mode IN ('amount', 'percent')),
       value INTEGER NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      provider_id INTEGER NOT NULL DEFAULT 0,
+      deactivated_at TEXT NOT NULL DEFAULT ''
     );
   `);
 }
@@ -1013,6 +1015,8 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
     ["line_name", "TEXT NOT NULL DEFAULT ''"],
     ["account_category", "TEXT NOT NULL DEFAULT 'Residential'"],
     ["disconnect_unpaid", "INTEGER NOT NULL DEFAULT 0"],
+    ["promise_on", "TEXT NOT NULL DEFAULT ''"],
+    ["promise_was_down", "INTEGER NOT NULL DEFAULT 0"],
   ];
   for (const [name, definition] of adds) {
     if (!columns.has(name)) db.exec(`ALTER TABLE customers ADD COLUMN ${name} ${definition}`);
@@ -1022,6 +1026,16 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
   }
   if (columnNames(db, "customer_extra_plans").size > 0 && !columnNames(db, "customer_extra_plans").has("label")) {
     db.exec("ALTER TABLE customer_extra_plans ADD COLUMN label TEXT NOT NULL DEFAULT ''");
+  }
+  const providerColumns = columnNames(db, "providers");
+  if (providerColumns.size > 0 && !providerColumns.has("promise_on")) {
+    db.exec("ALTER TABLE providers ADD COLUMN promise_on TEXT NOT NULL DEFAULT ''");
+  }
+  if (columnNames(db, "plan_coupons").size > 0 && !columnNames(db, "plan_coupons").has("provider_id")) {
+    db.exec("ALTER TABLE plan_coupons ADD COLUMN provider_id INTEGER NOT NULL DEFAULT 0");
+  }
+  if (columnNames(db, "plan_coupons").size > 0 && !columnNames(db, "plan_coupons").has("deactivated_at")) {
+    db.exec("ALTER TABLE plan_coupons ADD COLUMN deactivated_at TEXT NOT NULL DEFAULT ''");
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS charge_catalogue (

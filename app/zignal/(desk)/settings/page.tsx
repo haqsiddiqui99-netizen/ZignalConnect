@@ -2,8 +2,8 @@ import { changeOperatorPassword, retirePlanCoupon, saveOperatorSettings, savePla
 import { requireOperator } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
-import { formatInr } from "@/lib/format";
-import { getPlatformProfile, listPlanCoupons } from "@/lib/queries";
+import { formatInr, formatStamp } from "@/lib/format";
+import { getPlatformProfile, listOpenDesks, listPlanCoupons } from "@/lib/queries";
 import { INDIAN_STATES } from "@/lib/tax";
 
 export const metadata = { title: "Settings" };
@@ -17,6 +17,7 @@ export default async function OperatorSettings({
   const query = await searchParams;
   const company = getPlatformProfile();
   const coupons = listPlanCoupons();
+  const desks = listOpenDesks();
 
   return (
     <>
@@ -118,7 +119,7 @@ export default async function OperatorSettings({
       <article className="card" style={{ marginTop: 14, maxWidth: 720 }}>
         <h2>Desk promo codes</h2>
         <p className="fine" style={{ marginBottom: 12 }}>
-          A provider can enter one of these on the plan payment page. The code lowers the amount they pay.
+          A provider enters a code on the plan payment page. Choose one ISP to keep it off every other desk. That desk can use it once. Leave it as Any ISP and every desk can use it until you turn it off.
         </p>
         <form action={savePlanCoupon} className="stack">
           <div className="row-2">
@@ -131,13 +132,26 @@ export default async function OperatorSettings({
               <input name="value" type="number" min={1} required placeholder="10" />
             </label>
           </div>
-          <label className="field">
-            <span>Kind</span>
-            <select name="mode" defaultValue="percent">
-              <option value="percent">Percent off</option>
-              <option value="amount">Rupees off</option>
-            </select>
-          </label>
+          <div className="row-2">
+            <label className="field">
+              <span>Kind</span>
+              <select name="mode" defaultValue="percent">
+                <option value="percent">Percent off</option>
+                <option value="amount">Rupees off</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>ISP</span>
+              <select name="provider_id" defaultValue="0">
+                <option value="0">Any ISP</option>
+                {desks.map((desk) => (
+                  <option key={desk.id} value={desk.id}>
+                    {desk.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <SubmitButton className="btn small">Add promo</SubmitButton>
         </form>
         {coupons.length > 0 ? (
@@ -145,14 +159,25 @@ export default async function OperatorSettings({
             {coupons.map((coupon) => (
               <div key={coupon.id} className="reminder">
                 <strong>{coupon.code}</strong>
-                <span className="fine">
+                <span className="fine" style={{ display: "block" }}>
                   {coupon.mode === "percent" ? `${coupon.value}% off` : `${formatInr(coupon.value)} off`}
+                  {" · "}
+                  {coupon.provider_id > 0 ? `${coupon.provider_name || "One ISP"} · once` : "Any ISP"}
                   {coupon.active ? "" : " · off"}
                 </span>
+                <span className="fine" style={{ display: "block" }}>
+                  Created {coupon.created_at ? formatStamp(coupon.created_at) : "—"}
+                  {coupon.deactivated_at ? ` · Turned off ${formatStamp(coupon.deactivated_at)}` : ""}
+                </span>
+                <span className="fine" style={{ display: "block" }}>
+                  {coupon.desks === 0
+                    ? "No desk has used this code."
+                    : `${coupon.desks} ${coupon.desks === 1 ? "desk" : "desks"} (${coupon.desk_names}) · ${formatInr(coupon.discount)} off${coupon.paid_discount > 0 ? ` · ${formatInr(coupon.paid_discount)} on a paid plan` : " · none paid yet"}`}
+                </span>
                 {coupon.active ? (
-                  <form action={retirePlanCoupon}>
+                  <form action={retirePlanCoupon} style={{ marginTop: 8 }}>
                     <input type="hidden" name="coupon_id" value={coupon.id} />
-                    <button className="promo-toggle" type="submit">
+                    <button className="btn small" type="submit">
                       Turn off
                     </button>
                   </form>

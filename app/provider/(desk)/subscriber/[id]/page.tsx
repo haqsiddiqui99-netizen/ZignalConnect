@@ -9,6 +9,7 @@ import { Banner, StatusPill } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { allows } from "@/lib/entitlements";
 import { connectionId, formatStamp } from "@/lib/format";
+import { settleExpiredPromises } from "@/lib/promise-pay";
 import { getSubscriber, listChargeCatalogue, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, listDiscountCatalogue, listPayments, listPlans, listReminders } from "@/lib/queries";
 
 const TABS = [
@@ -45,6 +46,7 @@ export default async function CustomerDetailPage({
   const session = await requireRole("admin");
   const { id } = await params;
   const query = await searchParams;
+  await settleExpiredPromises();
   const person = getSubscriber(Number(id), session.providerId);
   if (!person) notFound();
   const tab = readTab(query.tab);

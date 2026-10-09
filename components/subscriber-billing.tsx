@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import {
   deleteCustomerCharge,
   deleteCustomerDiscount,
   disconnectExtraPlan,
+  cancelPromise,
   recordPayment,
   saveCustomerCharge,
+  savePromise,
   saveCustomerDiscount,
   saveExtraPlan,
   saveSubscriberPlan,
@@ -13,6 +16,8 @@ import {
 import { BILL_CYCLES, billCycleLabel, cycleAmount, incompleteCycleCharge } from "@/lib/bill-cycle";
 import { invoiceFor } from "@/lib/charges";
 import { formatDate, formatInr, formatStamp, isDate, todayISO } from "@/lib/format";
+import { closedInvoiceView, type InvoiceTotals } from "@/lib/tax";
+import { promiseAllowed, promiseWindow } from "@/lib/promise-pay";
 import type { CustomerCharge, CustomerDiscount, CustomerExtraPlan, Payment, Subscriber } from "@/lib/queries";
 import { PlanTerm } from "@/components/plan-term";
 import { SubmitButton } from "@/components/submit-button";
@@ -22,6 +27,49 @@ type ChargeOption = { id: number; name: string };
 type OfferOption = { id: number; name: string };
 
 const TAX_PRESETS = ["5", "12", "18", "22"];
+
+function ClosedInvoiceBreakdown({ payment }: { payment: Payment }) {
+  const closed = closedInvoiceView(payment.line_items, payment.amount);
+  return (
+    <>
+      <table>
+        <tbody>
+          {closed.lines.map((line, index) => (
+            <tr key={`${payment.id}-${index}`}>
+              <td>{line.description}</td>
+              <td className="num">{formatInr(line.amount, 2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <InvoiceTotalsBlock tax={closed.tax} />
+    </>
+  );
+}
+
+function InvoiceTotalsBlock({ tax }: { tax: InvoiceTotals }) {
+  const half = String(tax.rate / 2);
+  return (
+    <div className="invoice-totals">
+      <div>
+        <span>Sub total</span>
+        <span>{formatInr(tax.subtotal, 2)}</span>
+      </div>
+      <div>
+        <span>CGST {half}%</span>
+        <span>{formatInr(tax.cgst, 2)}</span>
+      </div>
+      <div>
+        <span>SGST {half}%</span>
+        <span>{formatInr(tax.sgst, 2)}</span>
+      </div>
+      <div>
+        <span>Grand total</span>
+        <span>{formatInr(tax.grand, 2)}</span>
+      </div>
+    </div>
+  );
+}
 
 function taxMode(included: number, percent: number) {
   if (included !== 0 || percent <= 0) return "included";
@@ -240,8 +288,13 @@ export function SubscriberBilling({
   const planCycle = person.plan_cycle || person.bill_cycle;
   const planAmount = person.plan_amount > 0 ? person.plan_amount : person.price;
   const today = todayISO();
-  const invoiceNote =
-    isDate(person.renew_date) && person.renew_date < today
+  const promised = isDate(person.promise_on) && person.promise_on >= today;
+  const canPromise = promiseAllowed(person, bill.due);
+  const dates = promiseWindow(person.renew_date, today);
+  const paymentDue = promised ? person.promise_on : person.renew_date;
+  const invoiceNote = promised
+    ? "Payment due date follows the promise. The original due date stays on this bill, and the next renewal stays on that cycle."
+    : isDate(person.renew_date) && person.renew_date < today
       ? "Payment is overdue."
       : isDate(person.renew_date) && person.renew_date > today
         ? "Renewal date is still ahead."
@@ -267,22 +320,25 @@ export function SubscriberBilling({
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <td>Payment due date</td>
+                  <td className="num">{showDate(paymentDue)}</td>
+                </tr>
+                {promised ? (
+                  <tr>
+                    <td>Original due date</td>
+                    <td className="num">{showDate(person.renew_date)}</td>
+                  </tr>
+                ) : null}
                 {bill.lines.map((item, index) => (
                   <tr key={`${item.description}-${index}`}>
                     <td>{item.description}</td>
-                    <td className="num">{formatInr(item.amount)}</td>
+                    <td className="num">{formatInr(item.amount, 2)}</td>
                   </tr>
                 ))}
-                <tr>
-                  <td>
-                    <strong>Due</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{formatInr(bill.due)}</strong>
-                  </td>
-                </tr>
               </tbody>
             </table>
+            <InvoiceTotalsBlock tax={bill.tax} />
           </div>
         )}
         <form action={recordPayment} className="stack" style={{ marginTop: 16 }}>
@@ -309,6 +365,36 @@ export function SubscriberBilling({
           </label>
           <SubmitButton pendingLabel="Recording…">Record payment</SubmitButton>
         </form>
+        {canPromise || promised ? (
+          <div className="promise-pay">
+            <h2>Promise to pay</h2>
+            <p className="fine">
+              {person.disconnect_unpaid || person.status === "disconnected" || person.promise_was_down
+                ? "The line stays on until this date. If the bill is still open the next morning, the line is disconnected. A full payment on or before this date keeps the next renewal on the original cycle."
+                : "The line stays on until this date. Disconnect on non-pay is off, so a missed promise does not cut this line. A full payment on or before this date keeps the next renewal on the original cycle."}
+            </p>
+            <div className="promise-row">
+              <form action={savePromise} className="promise-save">
+                <input type="hidden" name="customer_id" value={person.id} />
+                <label className="field">
+                  <span>Promise date</span>
+                  <input name="promise_on" type="date" required min={dates.earliest} max={dates.latest} defaultValue={promised ? person.promise_on : dates.earliest} />
+                </label>
+                <SubmitButton className="btn" pendingLabel="Saving…">
+                  {promised ? "Update promise" : "Save promise"}
+                </SubmitButton>
+              </form>
+              {promised ? (
+                <form action={cancelPromise} className="promise-remove">
+                  <input type="hidden" name="customer_id" value={person.id} />
+                  <SubmitButton className="btn" pendingLabel="Removing…">
+                    Remove promise
+                  </SubmitButton>
+                </form>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </article>
       ) : null}
       {part === "invoice" && view === "closed" ? (
@@ -333,21 +419,28 @@ export function SubscriberBilling({
               </thead>
               <tbody>
                 {closedInvoices.map((payment) => (
-                  <tr key={payment.id}>
-                    <td>
-                      {formatStamp(payment.paid_at)}
-                      <div className="fine">{payment.reference}</div>
-                    </td>
-                    <td>{payment.method}</td>
-                    <td className="num">{formatInr(payment.amount)}</td>
-                    <td>
-                      {showDate(payment.period_start)} to {showDate(payment.period_end)}
-                      {payment.note ? <div className="fine">{payment.note}</div> : null}
-                    </td>
-                    <td>
-                      <Link href={`/provider/receipt/income/${payment.id}`}>Receipt</Link>
-                    </td>
-                  </tr>
+                  <Fragment key={payment.id}>
+                    <tr>
+                      <td>
+                        {formatStamp(payment.paid_at)}
+                        <div className="fine">{payment.reference}</div>
+                      </td>
+                      <td>{payment.method}</td>
+                      <td className="num">{formatInr(payment.amount)}</td>
+                      <td>
+                        {showDate(payment.period_start)} to {showDate(payment.period_end)}
+                        {payment.note ? <div className="fine">{payment.note}</div> : null}
+                      </td>
+                      <td>
+                        <Link href={`/provider/receipt/income/${payment.id}`}>Receipt</Link>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan={5}>
+                        <ClosedInvoiceBreakdown payment={payment} />
+                      </td>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

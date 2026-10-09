@@ -44,16 +44,16 @@ import {
   cycleAmount,
   incompleteCycleCharge,
   isBillCycle,
-  nextRenewalDate,
   remindersFromImport,
   renewalAfterInstallation,
   type BillCycle,
 } from "@/lib/bill-cycle";
-import { cleanGstin, gstMode, gstOnTop, isGstin, isIndianState } from "@/lib/tax";
+import { cleanGstin, gstIncluded, gstMode, isGstin, isIndianState } from "@/lib/tax";
 import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
 import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
 import { syncDeskOverflow } from "@/lib/receipts";
-import { postDeskWelcome, postOnboardingMessage, sendDeskNote } from "@/lib/renewals";
+import { promiseAllowed, promiseWindow, renewalAfterPayment } from "@/lib/promise-pay";
+import { nextDeskFeeDate, postDeskWelcome, postOnboardingMessage, sendDeskNote } from "@/lib/renewals";
 import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
@@ -62,8 +62,12 @@ import { accountCategoryFromImport, findCataloguePromo, findPlanCoupon, getPlatf
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
-  const query = params ? `?${new URLSearchParams(params).toString()}` : "";
-  redirect(`${path}${query}`);
+  if (!params) redirect(path);
+  const [base, existing = ""] = path.split("?");
+  const query = new URLSearchParams(existing);
+  for (const [key, value] of Object.entries(params)) query.set(key, value);
+  const text = query.toString();
+  redirect(text ? `${base}?${text}` : base);
 }
 
 function readText(formData: FormData, key: string) {
@@ -709,6 +713,59 @@ export async function completePasswordReset(formData: FormData) {
   redirect(row.role === "admin" ? "/provider" : "/subscriber");
 }
 
+export async function savePromise(formData: FormData) {
+  const session = await requireRole("admin");
+  const id = Number(formData.get("customer_id"));
+  const current = getSubscriber(id, session.providerId);
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
+  const date = readText(formData, "promise_on");
+  const today = todayISO();
+  const window = promiseWindow(current.renew_date, today);
+  if (!isDate(date) || date < window.earliest || date > window.latest) {
+    go(`/provider/subscriber/${id}`, { tab: "invoice", error: "Pick a promise date within 14 days after the renewal date." });
+  }
+  const due = invoiceFor(current, listCustomerCharges(id), {
+    discounts: listCustomerDiscounts(id),
+    extraPlans: listCustomerExtraPlans(id),
+  }).due;
+  if (!promiseAllowed(current, due)) {
+    go(`/provider/subscriber/${id}`, { tab: "invoice", error: "A promise is for an active line that is due, or a line that is already disconnected." });
+  }
+  const wasDown = current.promise_on ? current.promise_was_down : current.status === "disconnected" ? 1 : 0;
+  run("UPDATE customers SET promise_on = ?, promise_was_down = ?, status = 'active' WHERE id = ?", date, wasDown, id);
+  let detail = "";
+  if (current.status === "disconnected") {
+    const line = await syncNetworkLine(session.providerId, current.line_name, true, { quietIfIdle: true });
+    detail = line.detail ? ` ${line.detail}` : "";
+  }
+  refresh();
+  go(`/provider/subscriber/${id}`, {
+    tab: "invoice",
+    notice: `Promise saved. Pay by ${formatDate(date)}. The renewal date stays ${formatDate(current.renew_date)}.${detail}`,
+  });
+}
+
+export async function cancelPromise(formData: FormData) {
+  const session = await requireRole("admin");
+  const id = Number(formData.get("customer_id"));
+  const current = getSubscriber(id, session.providerId);
+  if (!current) go("/provider/subscriber", { error: "That subscriber was not found." });
+  if (!current.promise_on) go(`/provider/subscriber/${id}`, { tab: "invoice", error: "There is no promise on this account." });
+  const today = todayISO();
+  const putBack = current.promise_was_down === 1 || (current.disconnect_unpaid === 1 && isDate(current.renew_date) && current.renew_date < today);
+  run(
+    `UPDATE customers SET promise_on = '', promise_was_down = 0${putBack ? ", status = 'disconnected'" : ""} WHERE id = ?`,
+    id,
+  );
+  let detail = "";
+  if (putBack && current.status !== "disconnected") {
+    const line = await syncNetworkLine(session.providerId, current.line_name, false, { quietIfIdle: true });
+    detail = line.detail ? ` ${line.detail}` : "";
+  }
+  refresh();
+  go(`/provider/subscriber/${id}`, { tab: "invoice", notice: `Promise removed.${detail}` });
+}
+
 export async function recordPayment(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(formData.get("customer_id"));
@@ -736,7 +793,7 @@ export async function recordPayment(formData: FormData) {
   });
   const due = built.due;
   const kind = amount >= due ? "full" : "partial";
-  const periodEnd = kind === "full" ? nextRenewalDate(current.renew_date, today, current.bill_cycle) : current.renew_date;
+  const periodEnd = kind === "full" ? renewalAfterPayment(current.renew_date, current.promise_on, today, current.bill_cycle) : current.renew_date;
   const reference = makeRef();
   const lineItems =
     kind === "full"
@@ -770,7 +827,7 @@ export async function recordPayment(formData: FormData) {
     );
     paymentId = Number(inserted.lastInsertRowid);
     if (kind === "full") {
-      run("UPDATE customers SET renew_date = ?, status = 'active' WHERE id = ?", periodEnd, id);
+      run("UPDATE customers SET renew_date = ?, status = 'active', promise_on = '', promise_was_down = 0 WHERE id = ?", periodEnd, id);
       run("UPDATE customer_charges SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", id);
       run("UPDATE customer_discounts SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", id);
       if (current.plan_frequency === "once") run("UPDATE customers SET plan_billed = 1 WHERE id = ?", id);
@@ -1288,7 +1345,7 @@ export async function payBill(formData: FormData) {
   const { payment } = instrument;
 
   const today = todayISO();
-  const periodEnd = nextRenewalDate(current.renew_date, today, current.bill_cycle);
+  const periodEnd = renewalAfterPayment(current.renew_date, current.promise_on, today, current.bill_cycle);
   const periodStart = current.renew_date > today ? current.renew_date : today;
   const reference = makeRef();
   const charges = listCustomerCharges(current.id);
@@ -1345,7 +1402,7 @@ export async function payBill(formData: FormData) {
       lineItems,
     );
     paymentId = Number(inserted.lastInsertRowid);
-    run("UPDATE customers SET renew_date = ?, status = 'active' WHERE id = ?", periodEnd, current.id);
+    run("UPDATE customers SET renew_date = ?, status = 'active', promise_on = '', promise_was_down = 0 WHERE id = ?", periodEnd, current.id);
     run("UPDATE customer_charges SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", current.id);
     run("UPDATE customer_discounts SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", current.id);
     if (current.plan_frequency === "once") run("UPDATE customers SET plan_billed = 1 WHERE id = ?", current.id);
@@ -2181,7 +2238,7 @@ export async function importPayments(formData: FormData) {
       const due = invoiceFor(current, charges, { discounts, extraPlans }).due;
       const kind = amount >= due ? "full" : "partial";
       const periodStart = current.renew_date > paidOn ? paidOn : current.renew_date;
-      const periodEnd = kind === "full" ? nextRenewalDate(current.renew_date, paidOn, current.bill_cycle) : current.renew_date;
+      const periodEnd = kind === "full" ? renewalAfterPayment(current.renew_date, current.promise_on, paidOn, current.bill_cycle) : current.renew_date;
       const lineItems =
         kind === "full"
           ? JSON.stringify(invoiceFor(current, charges, { paid: amount, discounts, extraPlans }).lines)
@@ -2202,7 +2259,7 @@ export async function importPayments(formData: FormData) {
         lineItems,
       );
       if (kind === "full") {
-        run("UPDATE customers SET renew_date = ?, status = 'active' WHERE id = ?", periodEnd, customerId);
+        run("UPDATE customers SET renew_date = ?, status = 'active', promise_on = '', promise_was_down = 0 WHERE id = ?", periodEnd, customerId);
         run("UPDATE customer_charges SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", customerId);
         run("UPDATE customer_discounts SET billed = 1 WHERE customer_id = ? AND frequency = 'once' AND billed = 0", customerId);
         if (current.plan_frequency === "once") run("UPDATE customers SET plan_billed = 1 WHERE id = ?", customerId);
@@ -2712,7 +2769,7 @@ export async function openUpgradeCheckout(formData: FormData) {
   const platform = getPlatformProfile();
   const quote = termQuote(CATALOG[nextPlan].price, term);
   const amount = quote.due;
-  const taxed = platform.gstin ? gstOnTop(amount) : { tax: 0, total: amount };
+  const taxed = platform.gstin ? gstIncluded(amount) : { tax: 0, total: amount };
   const mode = platform.gstin ? gstMode(platform.state, provider?.state ?? "") : "none";
   const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
   const label = `${requested === "premium" ? "Premium" : CATALOG[nextPlan].label} · ${termLabel}`;
@@ -2743,6 +2800,18 @@ export async function applyUpgradePromo(formData: FormData) {
   if (order.status === "paid") redirect("/provider/upgrade");
   const coupon = findPlanCoupon(readText(formData, "promo"));
   if (!coupon) go(`/provider/upgrade/pay/${id}/checkout`, { error: "That promo code is not active." });
+  if (coupon.provider_id > 0 && coupon.provider_id !== order.provider_id) {
+    go(`/provider/upgrade/pay/${id}/checkout`, { error: "That promo code is not for this desk." });
+  }
+  if (coupon.provider_id > 0) {
+    const used = one<{ id: number }>(
+      "SELECT id FROM upgrade_orders WHERE provider_id = ? AND id <> ? AND lower(promo_code) = ? AND promo_off > 0",
+      order.provider_id,
+      order.id,
+      coupon.code.toLowerCase(),
+    );
+    if (used) go(`/provider/upgrade/pay/${id}/checkout`, { error: "This promo code has already been used on this desk." });
+  }
   const off = promoOff(order.total, coupon.mode, coupon.value);
   run("UPDATE upgrade_orders SET promo_code = ?, promo_off = ? WHERE id = ?", coupon.code, off, order.id);
   refresh();
@@ -2786,24 +2855,31 @@ export async function savePlanCoupon(formData: FormData) {
   if (mode === "amount" && (!Number.isInteger(value) || value < 1)) {
     go("/zignal/settings", { error: "Enter the promo in whole rupees." });
   }
+  const providerId = Number(formData.get("provider_id"));
+  if (!Number.isInteger(providerId) || providerId < 0) go("/zignal/settings", { error: "Choose an ISP, or leave the code open to every desk." });
+  const desk = providerId > 0 ? getProvider(providerId) : undefined;
+  if (providerId > 0 && !desk) go("/zignal/settings", { error: "That ISP was not found." });
   if (one("SELECT id FROM plan_coupons WHERE lower(code) = ?", code.toLowerCase())) {
     go("/zignal/settings", { error: "That promo code already exists." });
   }
   run(
-    "INSERT INTO plan_coupons (code, mode, value, active, created_at) VALUES (?, ?, ?, 1, ?)",
+    "INSERT INTO plan_coupons (code, mode, value, active, created_at, provider_id) VALUES (?, ?, ?, 1, ?, ?)",
     code,
     mode,
     value,
     nowStamp(),
+    providerId,
   );
   refresh();
-  go("/zignal/settings", { notice: `Promo ${code} is ready for a desk payment.` });
+  go("/zignal/settings", {
+    notice: desk ? `Promo ${code} is ready for ${desk.name}. That desk can use it once.` : `Promo ${code} is ready for any desk.`,
+  });
 }
 
 export async function retirePlanCoupon(formData: FormData) {
   await requireOperator();
   const id = Number(formData.get("coupon_id"));
-  run("UPDATE plan_coupons SET active = 0 WHERE id = ?", id);
+  run("UPDATE plan_coupons SET active = 0, deactivated_at = ? WHERE id = ? AND active = 1", nowStamp(), id);
   refresh();
   go("/zignal/settings", { notice: "Promo turned off." });
 }
@@ -3038,13 +3114,14 @@ export async function sendDeskMail(formData: FormData) {
   const channel = readText(formData, "channel");
   const title = readText(formData, "title");
   const body = readText(formData, "body");
-  if (channel !== "email") go("/zignal/mail", { error: "Email is the only medium connected. Message and WhatsApp are not connected yet." });
-  if (title.length < 3 || body.length < 3) go("/zignal/mail", { error: "A note needs a title and a message." });
-  if (title.length > 80 || body.length > 400) go("/zignal/mail", { error: "That note is too long." });
-  if (!mailConfigured()) go("/zignal/mail", { error: "Email is not connected yet, so the note was not sent." });
+  const back = deskReturn(formData);
+  if (channel !== "email") go(back, { error: "Email is the only medium connected. Message and WhatsApp are not connected yet." });
+  if (title.length < 3 || body.length < 3) go(back, { error: "A note needs a title and a message." });
+  if (title.length > 80 || body.length > 400) go(back, { error: "That note is too long." });
+  if (!mailConfigured()) go(back, { error: "Email is not connected yet, so the note was not sent." });
   const ids = target === "all" ? listOpenDesks().map((desk) => desk.id) : [Number(target)];
   if (ids.length === 0 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
-    go("/zignal/mail", { error: "Choose a desk." });
+    go(back, { error: "Choose a desk." });
   }
   let sent = 0;
   let detail = "The note could not be sent.";
@@ -3054,8 +3131,8 @@ export async function sendDeskMail(formData: FormData) {
     else if (result.detail) detail = result.detail;
   }
   refresh();
-  if (sent === 0) go("/zignal/mail", { error: detail });
-  go("/zignal/mail", { notice: sent === 1 ? "The note was sent to 1 desk." : `The note was sent to ${sent} desks.` });
+  if (sent === 0) go(back, { error: detail });
+  go(back, { notice: sent === 1 ? "The note was sent to 1 desk." : `The note was sent to ${sent} desks.` });
 }
 
 export async function savePlatformProfile(formData: FormData) {
@@ -3089,10 +3166,48 @@ export async function savePlatformProfile(formData: FormData) {
   go("/zignal/settings", { notice: "Receipt details saved. Desk fees issued from now on use them." });
 }
 
+function deskReturn(formData: FormData) {
+  const back = readText(formData, "return_to");
+  if (/^\/zignal\/provider\/\d+(\?[A-Za-z0-9_=&-]*)?$/.test(back)) return back;
+  return "/zignal/mail";
+}
+
+export async function saveDeskPromise(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("provider_id"));
+  const back = `/zignal/provider/${id}?tab=invoice`;
+  const provider = Number.isInteger(id) ? getProvider(id) : undefined;
+  if (!provider || provider.closed_at) go(back, { error: "That desk is closed." });
+  const term: BillTerm = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
+  const dueOn = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
+  if (!isDate(dueOn)) go(back, { error: "This desk has no fee date yet." });
+  const date = readText(formData, "promise_on");
+  const window = promiseWindow(dueOn, todayISO());
+  if (!isDate(date) || date < window.earliest || date > window.latest) {
+    go(back, { error: "Pick a promise date within 14 days after the desk fee date." });
+  }
+  run("UPDATE providers SET promise_on = ? WHERE id = ?", date, id);
+  refresh();
+  go(back, { notice: `Promise saved. Pay by ${formatDate(date)}. The next desk fee stays on ${formatDate(dueOn)}.` });
+}
+
+export async function cancelDeskPromise(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("provider_id"));
+  const back = `/zignal/provider/${id}?tab=invoice`;
+  const provider = Number.isInteger(id) ? getProvider(id) : undefined;
+  if (!provider?.promise_on) go(back, { error: "There is no promise on this desk." });
+  run("UPDATE providers SET promise_on = '' WHERE id = ?", id);
+  refresh();
+  go(back, { notice: "Promise removed. The desk fee date is unchanged." });
+}
+
 export async function recordDeskPayment(formData: FormData) {
   const session = await getSession();
   if (!session) redirect("/");
-  const back = session.kind === "operator" ? "/zignal/revenue" : "/provider/revenue";
+  const requested = readText(formData, "return_to");
+  const operatorBack = /^\/zignal\/provider\/\d+(\?[A-Za-z0-9_=&-]*)?$/.test(requested) ? requested : "/zignal/revenue";
+  const back = session.kind === "operator" ? operatorBack : "/provider/revenue";
   const id = Number(formData.get("desk_payment_id"));
   const receipt =
     session.kind === "operator" ? `/zignal/receipt/${id}` : `/provider/receipt/desk/${id}`;
@@ -3113,6 +3228,7 @@ export async function recordDeskPayment(formData: FormData) {
   if (reference.length > 80) go(back, { error: "Keep the reference short." });
   if (row.paid_at) go(receipt);
   run("UPDATE desk_payments SET method = ?, reference = ?, paid_at = ? WHERE id = ?", method, reference, nowStamp(), id);
+  run("UPDATE providers SET promise_on = '' WHERE id = ?", row.provider_id);
   refresh();
   go(receipt);
 }

@@ -91,6 +91,12 @@ export function nextRenewalDate(currentRenew: string, today: string, cycle: stri
   return addMonths(base, item.months);
 }
 
+export function cycleAfter(renewDate: string, cycle: string) {
+  const item = billCycleOf(cycle);
+  if (item.days > 0) return addDays(renewDate, item.days);
+  return addMonths(renewDate, item.months || 1);
+}
+
 export function billCycleFromImport(value: string): BillCycle | "invalid" {
   const key = value.trim().toLowerCase();
   if (!key) return "monthly";

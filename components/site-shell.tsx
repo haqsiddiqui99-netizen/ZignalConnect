@@ -60,7 +60,12 @@ export function SiteShell({ current, children }: { current: string; children: Re
             </Link>
           ))}
         </nav>
-        <p className="fine">Zignal Connect · Provider desk and subscriber portal for internet service providers.</p>
+        <p className="fine">
+          Zignal Connect · Provider desk and subscriber portal for internet service providers. Sales{" "}
+          <a href="mailto:sales@zignalconnect.com">sales@zignalconnect.com</a>
+          {" · "}
+          Support <a href="mailto:support@zignalconnect.com">support@zignalconnect.com</a>
+        </p>
       </footer>
     </div>
   );

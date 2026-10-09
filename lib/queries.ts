@@ -53,6 +53,8 @@ export type Subscriber = {
   line_name: string;
   account_category: string;
   disconnect_unpaid: number;
+  promise_on: string;
+  promise_was_down: number;
 };
 
 export const ACCOUNT_CATEGORIES = [
@@ -114,6 +116,7 @@ export type Payment = {
   period_end: string;
   note: string;
   kind: "full" | "partial";
+  line_items?: string;
 };
 
 export type Reminder = {
@@ -187,6 +190,7 @@ export type ProviderRecord = {
   quit_on: string;
   quit_reason: string;
   closed_at: string;
+  promise_on: string;
 };
 
 const subscriberSelect = `
@@ -196,7 +200,7 @@ const subscriberSelect = `
     p.description AS plan_description, c.renew_date, c.installation_date, c.notes,
     c.bill_cycle, c.plan_amount, c.plan_cycle, c.reminders, c.plan_frequency, c.plan_tax_included, c.plan_tax_percent,
     c.plan_billed, c.invoice_tax_included, c.invoice_tax_percent, c.password_via, c.line_name,
-    c.account_category, c.disconnect_unpaid
+    c.account_category, c.disconnect_unpaid, c.promise_on, c.promise_was_down
   FROM customers c
   JOIN users u ON u.id = c.user_id
   JOIN plans p ON p.id = c.plan_id
@@ -269,6 +273,34 @@ export function listCustomerExtraPlans(customerId: number) {
 
 export function getProvider(providerId: number) {
   return one<ProviderRecord>("SELECT * FROM providers WHERE id = ?", providerId);
+}
+
+export function providerDeskFacts(providerId: number) {
+  const owner = one<{ name: string; email: string; mobile: string }>(
+    "SELECT name, email, mobile FROM users WHERE provider_id = ? AND is_owner = 1 ORDER BY id LIMIT 1",
+    providerId,
+  );
+  const lastLogin =
+    one<{ last_login: string }>(
+      "SELECT MAX(last_login) AS last_login FROM users WHERE provider_id = ? AND role = 'admin' AND last_login != ''",
+      providerId,
+    )?.last_login ?? "";
+  const overdue =
+    one<{ n: number }>(
+      `SELECT COUNT(*) AS n
+       FROM customers c
+       JOIN users u ON u.id = c.user_id
+       WHERE u.provider_id = ? AND c.renew_date < ?`,
+      providerId,
+      todayISO(),
+    )?.n ?? 0;
+  return {
+    ownerName: owner?.name ?? "",
+    ownerEmail: owner?.email ?? "",
+    ownerMobile: owner?.mobile ?? "",
+    lastLogin,
+    overdue,
+  };
 }
 
 export function trialStatus(trialEnds: string) {
@@ -355,16 +387,74 @@ export type PlanCoupon = {
   mode: "amount" | "percent";
   value: number;
   active: number;
+  provider_id: number;
+  provider_name?: string;
+  created_at: string;
+  deactivated_at: string;
+  desks: number;
+  discount: number;
+  paid_discount: number;
+  desk_names: string;
 };
 
 export function listPlanCoupons() {
-  return many<PlanCoupon>("SELECT id, code, mode, value, active FROM plan_coupons ORDER BY code");
+  return many<PlanCoupon>(
+    `SELECT c.id, c.code, c.mode, c.value, c.active, c.provider_id, c.created_at, c.deactivated_at,
+            COALESCE(p.name, '') AS provider_name,
+            COALESCE(u.desks, 0) AS desks,
+            COALESCE(u.discount, 0) AS discount,
+            COALESCE(u.paid_discount, 0) AS paid_discount,
+            COALESCE(u.desk_names, '') AS desk_names
+     FROM plan_coupons c
+     LEFT JOIN providers p ON p.id = c.provider_id
+     LEFT JOIN (
+       SELECT lower(o.promo_code) AS code,
+              COUNT(DISTINCT o.provider_id) AS desks,
+              SUM(o.promo_off) AS discount,
+              SUM(CASE WHEN o.status = 'paid' THEN o.promo_off ELSE 0 END) AS paid_discount,
+              GROUP_CONCAT(DISTINCT pr.name) AS desk_names
+       FROM upgrade_orders o
+       JOIN providers pr ON pr.id = o.provider_id
+       WHERE o.promo_code <> '' AND o.promo_off > 0
+       GROUP BY lower(o.promo_code)
+     ) u ON u.code = lower(c.code)
+     ORDER BY c.code`,
+  );
 }
 
 export function findPlanCoupon(code: string) {
   return one<PlanCoupon>(
-    "SELECT id, code, mode, value, active FROM plan_coupons WHERE lower(code) = ? AND active = 1",
+    `SELECT c.id, c.code, c.mode, c.value, c.active, c.provider_id, c.created_at, c.deactivated_at,
+            COALESCE(p.name, '') AS provider_name,
+            0 AS desks, 0 AS discount, 0 AS paid_discount, '' AS desk_names
+     FROM plan_coupons c
+     LEFT JOIN providers p ON p.id = c.provider_id
+     WHERE lower(c.code) = ? AND c.active = 1`,
     code.trim().toLowerCase(),
+  );
+}
+
+export type PromoUse = {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  promo_code: string;
+  promo_off: number;
+  plan_label: string;
+  total: number;
+  status: string;
+  created_at: string;
+  paid_at: string;
+};
+
+export function listPromoUses() {
+  return many<PromoUse>(
+    `SELECT o.id, o.provider_id, pr.name AS provider_name, o.promo_code, o.promo_off,
+            o.plan_label, o.total, o.status, o.created_at, o.paid_at
+     FROM upgrade_orders o
+     JOIN providers pr ON pr.id = o.provider_id
+     WHERE o.promo_code <> '' AND o.promo_off > 0
+     ORDER BY o.created_at DESC, o.id DESC`,
   );
 }
 
@@ -583,6 +673,43 @@ export function listDeskMailLog() {
   );
 }
 
+export function listDeskNotices(providerId: number) {
+  return many<{ id: number; title: string; body: string; created_at: string; channel: string }>(
+    "SELECT id, title, body, created_at, channel FROM desk_notices WHERE provider_id = ? ORDER BY id DESC",
+    providerId,
+  );
+}
+
+export type ProviderDeskBill = {
+  id: number;
+  period: string;
+  plan_label: string;
+  plan_amount: number;
+  overage_amount: number;
+  prior_overage: number;
+  staff_overage_amount: number;
+  prior_staff_overage: number;
+  taxable: number;
+  tax: number;
+  total: number;
+  gst_mode: "none" | "cgst" | "igst";
+  paid_at: string;
+  method: string;
+  reference: string;
+  issued_at: string;
+};
+
+export function listProviderDeskBills(providerId: number) {
+  return many<ProviderDeskBill>(
+    `SELECT id, period, plan_label, plan_amount, overage_amount, prior_overage, staff_overage_amount, prior_staff_overage,
+            taxable, tax, total, gst_mode, paid_at, method, reference, issued_at
+     FROM desk_payments
+     WHERE provider_id = ?
+     ORDER BY period DESC, id DESC`,
+    providerId,
+  );
+}
+
 export function listOpenDesks() {
   return many<{ id: number; name: string }>("SELECT id, name FROM providers WHERE closed_at = '' ORDER BY name");
 }
@@ -748,6 +875,7 @@ export type OperatorProvider = {
   quit_on: string;
   quit_reason: string;
   closed_at: string;
+  promise_on: string;
 };
 
 export function operatorDesk() {
@@ -755,7 +883,7 @@ export function operatorDesk() {
   const today = todayISO();
   const providers = many<Omit<OperatorProvider, "fee">>(
     `SELECT p.id, p.name, p.product_plan, p.billing_term, p.support_phone, p.created_at, p.subscriber_base,
-            p.city, p.state, p.trial_ends, p.quit_on, p.quit_reason, p.closed_at,
+            p.city, p.state, p.trial_ends, p.quit_on, p.quit_reason, p.closed_at, p.promise_on,
             (SELECT u.name FROM users u WHERE u.provider_id = p.id AND u.is_owner = 1 LIMIT 1) AS owner_name,
             (SELECT u.email FROM users u WHERE u.provider_id = p.id AND u.is_owner = 1 LIMIT 1) AS owner_email,
             (SELECT MAX(u.last_login) FROM users u WHERE u.provider_id = p.id AND u.role = 'admin' AND u.last_login != '') AS last_login,
@@ -783,6 +911,7 @@ export function operatorDesk() {
       quit_on: provider.quit_on || "",
       quit_reason: provider.quit_reason || "",
       closed_at: provider.closed_at || "",
+      promise_on: provider.promise_on || "",
       fee: termQuote(CATALOG[product_plan].price, billing_term).perMonth,
     };
   });

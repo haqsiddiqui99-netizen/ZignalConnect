@@ -83,11 +83,12 @@ export function formatClock(stamp: string) {
   return `${day} ${month} ${y}, ${hh.padStart(2, "0")}:${mi.padStart(2, "0")}:${ss.padStart(2, "0")}`;
 }
 
-export function formatInr(amount: number) {
+export function formatInr(amount: number, fractionDigits = 0) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(amount);
 }
 

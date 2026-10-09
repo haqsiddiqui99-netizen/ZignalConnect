@@ -435,6 +435,24 @@ a.stat.on { outline: 2px solid var(--forest); }
 .card { padding: 18px; }
 .card h2 { margin: 0 0 12px; font-size: 26px; }
 .table-wrap { overflow-x: auto; max-width: 100%; }
+.invoice-totals {
+  margin-left: auto;
+  margin-top: 16px;
+  width: min(280px, 100%);
+  display: grid;
+  gap: 8px;
+}
+.invoice-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.invoice-totals div:last-child {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-weight: 650;
+}
 .support-table td.desc { white-space: normal; min-width: 220px; max-width: 420px; }
 .ticket-preview {
   display: -webkit-box;
@@ -553,6 +571,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
 .provider-table th,
 .provider-table td { white-space: nowrap; vertical-align: middle; }
 .provider-table thead th { position: sticky; top: 0; background: #faf6ef; z-index: 2; }
+.provider-table tbody tr.desk-line { cursor: pointer; }
 .provider-table tbody tr:hover td { background: #f7f1e6; }
 .provider-table td.isp { white-space: normal; min-width: 240px; }
 .provider-table td.desk-empty { text-align: center; color: var(--muted); padding: 28px 12px; }
@@ -739,6 +758,14 @@ a.rowlink:hover { border-bottom-color: var(--ink); }
   font-weight: 600;
   border-bottom-color: var(--copper);
 }
+.promise-pay { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+.card .promise-pay h2 { margin: 0; }
+.promise-pay .fine { margin: 0; }
+.promise-row { display: flex; align-items: flex-end; gap: 12px; }
+.promise-save, .promise-remove { display: contents; }
+.promise-row input[type="hidden"] { display: none; }
+.promise-row .field { flex: none; width: 220px; }
+.promise-row .btn { flex: 1; white-space: nowrap; }
 .add-fold { margin-top: 18px; }
 .add-fold > summary {
   list-style: none;
@@ -1042,6 +1069,8 @@ input.tax-locked, input[readonly].tax-locked, select.tax-locked:disabled { backg
 .signup { max-width: 1180px; margin: 0 auto; padding: 36px 40px 72px; }
 .signup-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 28px; }
 .signup-mark { color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-size: 12px; }
+.site-brand .signup-mark,
+.signup-top .signup-mark { color: var(--copper); }
 .signup-intro { margin-bottom: 18px; max-width: 720px; }
 .signup-intro h1 { font-size: 48px; margin: 0 0 8px; line-height: 1; }
 .signup-intro p { color: var(--muted); }
@@ -1383,6 +1412,7 @@ html[data-theme="dark"] .plan-option:has(input:focus-visible) { outline-color: #
 .site-card { display: flex; flex-direction: column; gap: 10px; }
 .site-card h2 { margin: 0; font-size: 24px; }
 .site-card > p { color: var(--muted); }
+.site-card a { color: var(--copper); }
 .site-plan h2 { font-size: 32px; }
 .site-plan > .btn { margin-top: auto; align-self: flex-start; }
 .site-cta {

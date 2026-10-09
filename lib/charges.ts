@@ -1,6 +1,6 @@
 import { billCycleLabel, cycleAmount, isBillCycle } from "@/lib/bill-cycle";
 import { formatDate, formatInr, isDate } from "@/lib/format";
-import { addGstLines } from "@/lib/tax";
+import { invoiceTotals } from "@/lib/tax";
 
 export const CHARGE_KINDS = [
   { value: "router", label: "Router charge" },
@@ -258,8 +258,7 @@ function pushPlanLine(
   if (plan.planAmount <= 0) return;
   lines.push({ description: withSpan(plan.planLine, plan.activatedOn, plan.renewsOn), amount: plan.planAmount });
   const targets = plan.planId ? ["plan", `plan:${plan.planId}`] : ["plan"];
-  const net = applyTargetDiscounts(lines, discounts, targets, plan.planAmount, taxLabel);
-  if (!plan.planTaxIncluded) lines.push(...addGstLines(net, taxLabel));
+  applyTargetDiscounts(lines, discounts, targets, plan.planAmount, taxLabel);
 }
 
 export function subscriberBill(input: {
@@ -279,15 +278,13 @@ export function subscriberBill(input: {
 }) {
   const lines: { description: string; amount: number }[] = [];
   const discounts = liveDiscounts(input.discounts ?? []);
-  pushPlanLine(lines, discounts, input, "plan");
+  pushPlanLine(lines, discounts, input, input.planLine);
   for (const extra of input.extraPlans ?? []) {
     pushPlanLine(lines, discounts, extra, extra.planLine);
   }
   for (const charge of openCharges(input.charges)) {
     lines.push({ description: withSpan(charge.label, charge.activated_on), amount: charge.amount });
-    const net = applyTargetDiscounts(lines, discounts, charge.kind ?? "", charge.amount, charge.label);
-    const included = typeof charge.taxIncluded === "boolean" ? charge.taxIncluded : charge.tax_included !== 0;
-    if (!included) lines.push(...addGstLines(net, charge.label));
+    applyTargetDiscounts(lines, discounts, charge.kind ?? "", charge.amount, charge.label);
   }
   let subtotal = lines.reduce((sum, line) => sum + line.amount, 0);
   for (const discount of discounts) {
@@ -297,10 +294,10 @@ export function subscriberBill(input: {
     subtotal -= off;
     lines.push({ description: `${discount.name} on invoice`, amount: -off });
   }
-  if (!input.invoiceTaxIncluded && subtotal > 0) lines.push(...addGstLines(subtotal, "invoice"));
-  const due = Math.max(0, lines.reduce((sum, line) => sum + line.amount, 0));
+  const tax = invoiceTotals(Math.max(0, subtotal), input.invoiceTaxIncluded, input.invoiceTaxPercent);
+  const due = tax.grand;
   if (input.paid && input.paid > due) lines.push({ description: "Additional amount", amount: input.paid - due });
-  return { lines, due };
+  return { lines, due, tax };
 }
 
 export function readDiscounts(formData: FormData): { ok: true; discounts: DiscountInput[] } | { ok: false; error: string } {
@@ -547,12 +544,17 @@ export function readBillSettings(formData: FormData):
   };
 }
 
+function gstPair(percent: number) {
+  const rate = percent > 0 ? percent : 18;
+  return `CGST ${rate / 2}% and SGST ${rate / 2}%`;
+}
+
 export function billTaxNote(person: Pick<BillPerson, "plan_tax_included" | "plan_tax_percent" | "invoice_tax_included" | "invoice_tax_percent">) {
   const bits: string[] = [];
-  if (person.plan_tax_included === 0) bits.push("CGST 9% and SGST 9% on the plan");
-  if (person.invoice_tax_included === 0) bits.push("CGST 9% and SGST 9% on the full invoice");
+  if (person.invoice_tax_included === 0) bits.push(`Tax is added on the invoice total as ${gstPair(person.invoice_tax_percent)}.`);
+  else bits.push(`Tax is inside the invoice total as ${gstPair(person.invoice_tax_percent)}.`);
   if (bits.length === 0) return "";
-  return ` Tax is added as ${bits.join(" and ")}.`;
+  return ` ${bits.join(" ")}`;
 }
 
 export function chargeSummary(charge: {

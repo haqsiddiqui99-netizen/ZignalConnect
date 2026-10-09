@@ -2,8 +2,9 @@ import { billCycleLabel } from "@/lib/bill-cycle";
 import { invoiceFor } from "@/lib/charges";
 import { many, one, run } from "@/lib/db";
 import { BILL_TERMS, CATALOG, allows, isBillTerm, isProductPlan, termQuote, type BillTerm, type ProductPlan } from "@/lib/entitlements";
-import { addMonths, daysUntil, formatDate, formatInr, formatSpeed, nowStamp, todayISO } from "@/lib/format";
+import { addMonths, daysUntil, formatDate, formatInr, formatSpeed, isDate, nowStamp, todayISO } from "@/lib/format";
 import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
+import { settleExpiredDeskPromises, settleExpiredPromises } from "@/lib/promise-pay";
 import { deskMailSettings, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
 
 type DueLine = {
@@ -128,7 +129,7 @@ export async function issueRenewalReminders(providerId: number) {
   return { emailed, failed };
 }
 
-function nextDeskFeeDate(trialEnds: string, opened: string, term: BillTerm) {
+export function nextDeskFeeDate(trialEnds: string, opened: string, term: BillTerm) {
   const months = term === "yearly" ? 12 : term === "quarterly" ? 3 : 1;
   const today = todayISO();
   const trial = trialEnds.slice(0, 10);
@@ -162,7 +163,8 @@ export async function issueDeskFeeReminders(providerId: number) {
   if (!owner?.email) return { emailed: 0, failed: 0 };
   const plan: ProductPlan = isProductPlan(provider.product_plan) ? provider.product_plan : "pro";
   const term: BillTerm = isBillTerm(provider.billing_term) ? provider.billing_term : "monthly";
-  const dueOn = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
+  const cycleDue = nextDeskFeeDate(provider.trial_ends, provider.created_at, term);
+  const dueOn = isDate(provider.promise_on) && provider.promise_on >= todayISO() ? provider.promise_on : cycleDue;
   if (!dueOn) return { emailed: 0, failed: 0 };
   const days = daysUntil(dueOn);
   const stage = days === 3 ? "soon" : days === 0 ? "due" : null;
@@ -234,6 +236,8 @@ export async function sendDeskNote(providerId: number, title: string, body: stri
 }
 
 export async function runMorningReminders() {
+  await settleExpiredPromises();
+  settleExpiredDeskPromises();
   const providers = many<{ id: number }>("SELECT id FROM providers");
   let emailed = 0;
   let failed = 0;

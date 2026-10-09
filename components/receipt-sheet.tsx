@@ -68,8 +68,8 @@ function withGst(doc: ReceiptDoc): ReceiptDoc {
   const goods = doc.lines.filter((line) => !taxLine.test(line.description));
   const recorded = doc.cgst + doc.sgst + doc.igst;
   if (recorded > 0) {
-    const cgst = Math.floor(recorded / 2);
-    return { ...doc, lines: goods.length ? goods : doc.lines, cgst, sgst: recorded - cgst, igst: 0, gstMode: "cgst" };
+    const cgst = gstIncluded(doc.total).cgst;
+    return { ...doc, lines: goods.length ? goods : doc.lines, taxable: gstIncluded(doc.total).taxable, cgst, sgst: cgst, igst: 0, gstMode: "cgst" };
   }
   const base = goods.length ? goods : doc.lines;
   const goodsSum = base.reduce((sum, line) => sum + line.amount, 0);
@@ -79,8 +79,8 @@ function withGst(doc: ReceiptDoc): ReceiptDoc {
   }
   if (taxLines.length > 0) {
     const tax = taxLines.reduce((sum, line) => sum + line.amount, 0);
-    const cgst = Math.floor(tax / 2);
-    return { ...doc, lines: base, taxable: goodsSum, cgst, sgst: tax - cgst, igst: 0, gstMode: "cgst" };
+    const cgst = gstIncluded(doc.total).cgst;
+    return { ...doc, lines: base, taxable: gstIncluded(doc.total).taxable, cgst, sgst: cgst, igst: 0, gstMode: "cgst" };
   }
   return {
     ...doc,
@@ -144,7 +144,7 @@ export function ReceiptSheet({ doc }: { doc: ReceiptDoc }) {
             <tr key={line.description}>
               <td>{line.description}</td>
               <td>{line.sac}</td>
-              <td className="num">{formatInr(line.amount)}</td>
+              <td className="num">{formatInr(line.amount, 2)}</td>
             </tr>
           ))}
         </tbody>
@@ -153,23 +153,23 @@ export function ReceiptSheet({ doc }: { doc: ReceiptDoc }) {
         <tbody>
           <tr>
             <td>Taxable value</td>
-            <td className="num">{formatInr(doc.taxable)}</td>
+            <td className="num">{formatInr(doc.taxable, 2)}</td>
           </tr>
           {doc.gstMode === "cgst" ? (
             <>
               <tr>
                 <td>CGST 9%</td>
-                <td className="num">{formatInr(doc.cgst)}</td>
+                <td className="num">{formatInr(doc.cgst, 2)}</td>
               </tr>
               <tr>
                 <td>SGST 9%</td>
-                <td className="num">{formatInr(doc.sgst)}</td>
+                <td className="num">{formatInr(doc.sgst, 2)}</td>
               </tr>
             </>
           ) : null}
           <tr className="grand">
             <td>Total</td>
-            <td className="num">{formatInr(doc.total)}</td>
+            <td className="num">{formatInr(doc.total, 2)}</td>
           </tr>
         </tbody>
       </table>

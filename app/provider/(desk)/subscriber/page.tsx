@@ -2,7 +2,7 @@ import Link from "next/link";
 import { FilterForm, FilterLink } from "@/components/filter-form";
 import { requireRole } from "@/lib/auth";
 import { billCycleLabel } from "@/lib/bill-cycle";
-import { formatDate, formatInr } from "@/lib/format";
+import { formatDate, formatInr, isDate, todayISO } from "@/lib/format";
 import { listSubscribers, subscriberStatusCounts } from "@/lib/queries";
 import { Banner, LineId, StatusPill } from "@/components/ui";
 import { LINE_STATUSES } from "@/lib/line-status";
@@ -36,6 +36,7 @@ export default async function CustomersPage({
     return text ? `/provider/subscriber?${text}` : "/provider/subscriber";
   }
 
+  const today = todayISO();
   const from = people.total === 0 ? 0 : (people.page - 1) * 50 + 1;
   const to = (people.page - 1) * 50 + people.rows.length;
 
@@ -110,6 +111,7 @@ export default async function CustomersPage({
                   <th>Contact</th>
                   <th>Internet Plan</th>
                   <th>Renewal</th>
+                  <th>Payment due</th>
                   <th className="num">Monthly</th>
                   <th>Status</th>
                   <th>Details</th>
@@ -136,6 +138,10 @@ export default async function CustomersPage({
                       <div className="fine">{billCycleLabel(person.bill_cycle)}</div>
                     </td>
                     <td>{formatDate(person.renew_date)}</td>
+                    <td>
+                      {formatDate(isDate(person.promise_on) && person.promise_on >= today ? person.promise_on : person.renew_date)}
+                      {isDate(person.promise_on) && person.promise_on >= today ? <div className="fine">Promise to Pay</div> : null}
+                    </td>
                     <td className="num">{formatInr(person.price)}</td>
                     <td>
                       <StatusPill status={person.status} renewDate={person.renew_date} />

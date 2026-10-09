@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type ProviderRow = {
@@ -18,6 +20,7 @@ export type ProviderRow = {
   trialSort: string;
   paymentDue: string;
   paymentDueSort: string;
+  paymentNote?: string;
   fee: string;
   staff: string;
   support: string;
@@ -177,6 +180,7 @@ function FilterMenu({
 }
 
 export function ProviderTable({ rows }: { rows: ProviderRow[] }) {
+  const router = useRouter();
   const [filters, setFilters] = useState<Partial<Record<ColumnKey, string>>>({});
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: DateKey; dir: "asc" | "desc" } | null>(null);
@@ -302,11 +306,13 @@ export function ProviderTable({ rows }: { rows: ProviderRow[] }) {
               </tr>
             ) : (
               visible.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} className="desk-line" onClick={() => router.push(`/zignal/provider/${row.id}`)}>
                   <td className="isp">
-                    <div className="desk-isp">{row.isp}</div>
-                    {row.owner ? <div className="fine">{row.owner}</div> : null}
-                    {row.place ? <div className="fine">{row.place}</div> : null}
+                    <Link className="rowlink" href={`/zignal/provider/${row.id}`} onClick={(event) => event.stopPropagation()}>
+                      <div className="desk-isp">{row.isp}</div>
+                      {row.owner ? <div className="fine">{row.owner}</div> : null}
+                      {row.place ? <div className="fine">{row.place}</div> : null}
+                    </Link>
                   </td>
                   <td>
                     <span className={`desk-state ${row.stateKind}`}>{row.desk}</span>
@@ -319,7 +325,10 @@ export function ProviderTable({ rows }: { rows: ProviderRow[] }) {
                   <td className="desk-time">{row.opened}</td>
                   <td className={row.lastLogin === "Not yet" ? "desk-quiet" : "desk-time"}>{row.lastLogin}</td>
                   <td className="desk-time">{row.trial}</td>
-                  <td className="desk-time">{row.paymentDue}</td>
+                  <td className="desk-time">
+                    {row.paymentDue}
+                    {row.paymentNote ? <div className="fine">{row.paymentNote}</div> : null}
+                  </td>
                   <td className="num">{row.fee}</td>
                   <td className="num">{row.staff}</td>
                   <td>{row.support}</td>

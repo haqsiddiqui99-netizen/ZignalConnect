@@ -13,14 +13,16 @@ import {
   formatInr,
   formatSpeed,
   formatStamp,
+  isDate,
   todayISO,
 } from "@/lib/format";
 import { allows } from "@/lib/entitlements";
+import { settleExpiredPromises } from "@/lib/promise-pay";
 import { getSubscriberByUserId, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans, listPayments, listReminders } from "@/lib/queries";
 
 export const metadata = { title: "My connection" };
 
-function billingReminder(status: string, renewDate: string, plan: string, dueAmount: number, cycle: string) {
+function billingReminder(status: string, renewDate: string, plan: string, dueAmount: number, cycle: string, promiseOn: string) {
   const due = formatInr(dueAmount);
   const nextRenewal = formatDate(nextRenewalDate(renewDate, todayISO(), cycle));
   if (status === "suspended" || status === "disconnected") {
@@ -40,6 +42,12 @@ function billingReminder(status: string, renewDate: string, plan: string, dueAmo
     return {
       title: "Account is written off",
       body: `${plan} is written off. Contact the provider before paying this line.`,
+    };
+  }
+  if (promiseOn && promiseOn >= todayISO()) {
+    return {
+      title: "Promise to pay",
+      body: `${plan} stays on until ${formatDate(promiseOn)}. The renewal date stays ${formatDate(renewDate)}. Pay ${due} on or before the promise date.`,
     };
   }
   const label = dueLabel(renewDate);
@@ -72,6 +80,7 @@ export default async function PortalHome({
 }) {
   const session = await requireRole("customer");
   const query = await searchParams;
+  await settleExpiredPromises();
   const person = getSubscriberByUserId(session.uid);
   if (!person) notFound();
   const payments = listPayments({ customerId: person.id }).slice(0, 3);
@@ -80,7 +89,7 @@ export default async function PortalHome({
     discounts: listCustomerDiscounts(person.id),
     extraPlans: listCustomerExtraPlans(person.id),
   }).due;
-  const live = billingReminder(person.status, person.renew_date, person.plan_name, dueAmount, person.bill_cycle);
+  const live = billingReminder(person.status, person.renew_date, person.plan_name, dueAmount, person.bill_cycle, person.promise_on);
 
   return (
     <>
@@ -106,6 +115,7 @@ export default async function PortalHome({
           <p className="hero-price">{formatInr(dueAmount)}</p>
           <p>
             {billCycleLabel(person.bill_cycle).toLowerCase()} · renews {formatDate(person.renew_date)}
+            {isDate(person.promise_on) && person.promise_on >= todayISO() ? ` · promise ${formatDate(person.promise_on)}` : ""}
           </p>
           <div style={{ marginTop: 14 }}>
             <Link className="btn light" href="/subscriber/pay">
