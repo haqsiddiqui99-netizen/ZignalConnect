@@ -34,7 +34,7 @@ export default async function ReportsPage() {
         </header>
         <article className="card">
           <p>The monthly report is part of every desk plan.</p>
-          <p style={{ marginTop: 12 }}>
+          <p>
             <Link className="btn primary" href="/provider/upgrade">
               See plans
             </Link>
@@ -50,8 +50,8 @@ export default async function ReportsPage() {
     <>
       <header className="page-head">
         <div>
-          <h1>Collected this month</h1>
-          <p>{formatInr(report.total)} across the plans on this desk.</p>
+          <h1>Report</h1>
+          <p>{formatInr(report.total)} collected this month, across the plans on this desk.</p>
         </div>
         <a className="btn" href="/provider/reports/export">
           Export payments
@@ -66,7 +66,7 @@ export default async function ReportsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Internet Plan</th>
+                  <th>Internet plan</th>
                   <th className="num">Receipts</th>
                   <th className="num">Amount</th>
                 </tr>

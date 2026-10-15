@@ -2,8 +2,8 @@ import crypto from "crypto";
 import { clearLoginChallenge, readLoginChallenge, setLoginChallenge } from "@/lib/auth";
 import { one, run } from "@/lib/db";
 
-/** Turn this on when sign-in email is connected and the code step should run. */
-export const LOGIN_CODE_ENABLED = false;
+/** Desk sign-in sends a 6-digit code after the password. */
+export const LOGIN_CODE_ENABLED = true;
 
 const MINUTES = 10;
 const MAX_ATTEMPTS = 5;
@@ -15,6 +15,8 @@ type LoginCodeRow = {
   user_id: number;
   account_kind: LoginKind;
   email: string;
+  channel: string;
+  phone: string;
   code_hash: string;
   expires_at: string;
   attempts: number;
@@ -37,6 +39,12 @@ export function maskEmail(email: string) {
   return `${name.slice(0, 1)}•••@${domain}`;
 }
 
+export function maskPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 4) return "your WhatsApp";
+  return `${digits.slice(0, 2)}•••${digits.slice(-2)}`;
+}
+
 function freshCode() {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
@@ -45,16 +53,18 @@ function sweep() {
   run("DELETE FROM login_codes WHERE expires_at < ?", String(Date.now()));
 }
 
-export async function beginLoginCode(input: { userId: number; kind: LoginKind; email: string }) {
+export async function beginLoginCode(input: { userId: number; kind: LoginKind; email: string; channel: "email" | "whatsapp"; phone: string }) {
   sweep();
   const code = freshCode();
   const now = Date.now();
   run("DELETE FROM login_codes WHERE user_id = ? AND account_kind = ?", input.userId, input.kind);
   const inserted = run(
-    "INSERT INTO login_codes (user_id, account_kind, email, code_hash, expires_at, attempts, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+    "INSERT INTO login_codes (user_id, account_kind, email, channel, phone, code_hash, expires_at, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
     input.userId,
     input.kind,
     input.email,
+    input.channel,
+    input.phone,
     hashCode(code),
     String(now + MINUTES * 60 * 1000),
     String(now),
@@ -72,7 +82,10 @@ export async function dropLoginCode() {
 async function currentRow() {
   const id = await readLoginChallenge();
   if (!id) return null;
-  const row = one<LoginCodeRow>("SELECT id, user_id, account_kind, email, code_hash, expires_at, attempts, created_at FROM login_codes WHERE id = ?", id);
+  const row = one<LoginCodeRow>(
+    "SELECT id, user_id, account_kind, email, channel, phone, code_hash, expires_at, attempts, created_at FROM login_codes WHERE id = ?",
+    id,
+  );
   if (!row || Number(row.expires_at) < Date.now() || row.attempts >= MAX_ATTEMPTS) {
     if (row) run("DELETE FROM login_codes WHERE id = ?", row.id);
     await clearLoginChallenge();
@@ -84,7 +97,12 @@ async function currentRow() {
 export async function pendingLogin() {
   const row = await currentRow();
   if (!row) return null;
-  return { email: maskEmail(row.email), sentAt: Number(row.created_at) };
+  const channel = row.channel === "whatsapp" ? "whatsapp" : "email";
+  return {
+    channel,
+    where: channel === "whatsapp" ? maskPhone(row.phone) : maskEmail(row.email),
+    sentAt: Number(row.created_at),
+  };
 }
 
 export async function replaceLoginCode() {
@@ -101,7 +119,7 @@ export async function replaceLoginCode() {
     row.id,
   );
   await setLoginChallenge(row.id);
-  return { ok: true as const, code, email: row.email };
+  return { ok: true as const, code, email: row.email, channel: row.channel === "whatsapp" ? ("whatsapp" as const) : ("email" as const), phone: row.phone };
 }
 
 export async function checkLoginCode(code: string) {

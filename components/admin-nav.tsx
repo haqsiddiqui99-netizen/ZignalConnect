@@ -11,7 +11,7 @@ const items: { href: string; label: string; exact?: boolean; also?: string[] }[]
   { href: "/provider/reports", label: "Report" },
   { href: "/provider/team", label: "My team" },
   { href: "/provider/upgrade", label: "Upgrade" },
-  { href: "/provider/complaints", label: "Complaint" },
+  { href: "/provider/complaints", label: "Complaints" },
   { href: "/provider/settings", label: "Settings" },
   { href: "/provider/support", label: "Zignal Support" },
 ];

@@ -51,7 +51,7 @@ export default async function CustomersPage({
         </div>
         <div className="demo-row">
           <Link className="btn" href="/provider/import">
-            Import Subscribers
+            Import subscribers
           </Link>
           <Link className="btn" href="/provider/payments">
             Import payments
@@ -109,7 +109,7 @@ export default async function CustomersPage({
                   <th className="num">No.</th>
                   <th>Subscriber</th>
                   <th>Contact</th>
-                  <th>Internet Plan</th>
+                  <th>Internet plan</th>
                   <th>Renewal</th>
                   <th>Payment due</th>
                   <th className="num">Monthly</th>

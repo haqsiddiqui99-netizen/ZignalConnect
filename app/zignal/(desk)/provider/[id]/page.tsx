@@ -15,7 +15,9 @@ import { nextDeskFeeDate } from "@/lib/renewals";
 import { ensureDeskCharge } from "@/lib/receipts";
 import { gstIncluded, gstMode } from "@/lib/tax";
 import {
+  collectLine,
   getProvider,
+  maskAccount,
   listDeskNotices,
   listProviderDeskBills,
   getPlatformProfile,
@@ -274,17 +276,17 @@ export default async function ProviderDeskPage({
       {tab === "invoice" ? (
         <nav className="invoice-switch" aria-label="Desk invoices">
           <Link href={`/zignal/provider/${providerId}?tab=invoice&view=open`} className={invoiceView === "open" ? "active" : undefined}>
-            Open Invoice
+            Open invoice
           </Link>
           <Link href={`/zignal/provider/${providerId}?tab=invoice&view=closed`} className={invoiceView === "closed" ? "active" : undefined}>
-            Closed Invoice
+            Closed invoice
           </Link>
         </nav>
       ) : null}
       {tab === "invoice" && invoiceView === "open" ? (
-        <article className="card" style={{ marginBottom: 16 }}>
+        <article className="card">
           <h2>Open invoice</h2>
-          <p className="fine" style={{ margin: "8px 0 12px" }}>
+          <p className="fine">
             {isDate(paymentDue) ? `The desk fee is due ${formatDate(paymentDue)}.` : "This desk has no fee date yet."}{" "}
             {openBills.length === 0 && isDate(provider.trial_ends.slice(0, 10)) && provider.trial_ends.slice(0, 10) >= today
               ? "The invoice is written when the trial ends. No card is charged."
@@ -369,9 +371,9 @@ export default async function ProviderDeskPage({
         </article>
       ) : null}
       {tab === "invoice" && invoiceView === "closed" ? (
-        <article className="card" style={{ marginBottom: 16 }}>
+        <article className="card">
           <h2>Closed invoices</h2>
-          <p className="fine" style={{ margin: "8px 0 12px" }}>
+          <p className="fine">
             A closed invoice is a desk fee that already has a receipt.
           </p>
           {closedBills.length === 0 ? (
@@ -391,10 +393,10 @@ export default async function ProviderDeskPage({
         </article>
       ) : null}
       {tab === "payment" ? (
-      <article className="card account-sheet" style={{ marginBottom: 16 }}>
+      <article className="card account-sheet">
         <h2>Payment details</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
-          This is the method the ISP saved for its own collections. It is not charged by Zignal.
+        <p className="fine">
+          This is how the ISP prefers to pay Zignal. Saving it does not charge anything.
         </p>
         {paymentLine ? (
           <dl className="fact-grid">
@@ -406,8 +408,26 @@ export default async function ProviderDeskPage({
         ) : (
           <p>This ISP has not saved a payment method.</p>
         )}
-        <h2 style={{ marginTop: 22 }}>Paid to Zignal</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <h2>Collect from subscribers</h2>
+        <p className="fine">
+          Where this ISP&apos;s subscribers pay. That money goes to the ISP, not to Zignal.
+        </p>
+        <dl className="fact-grid">
+          <Fact label="Subscribers see" value={collectLine(provider)} wide />
+          <Fact label="UPI ID" value={provider.collect_upi} />
+          <Fact label="Payee name" value={provider.collect_upi ? provider.collect_payee : ""} />
+          <Fact label="Account holder" value={provider.bank_holder} />
+          <Fact label="Account number" value={maskAccount(provider.bank_account)} />
+          <Fact label="IFSC" value={provider.bank_ifsc} />
+          <Fact label="PAN" value={provider.bank_pan} />
+          <Fact
+            label="Bank status"
+            value={provider.bank_account ? (provider.bank_status === "active" ? "Active" : "Waiting for the payment gateway") : ""}
+          />
+          <Fact label="Bank changed" value={provider.bank_changed_at ? formatStamp(provider.bank_changed_at) : ""} />
+        </dl>
+        <h2>Paid to Zignal</h2>
+        <p className="fine">
           Desk fees already recorded. A receipt is on the closed invoice.
         </p>
         {closedBills.length === 0 ? (
@@ -446,9 +466,9 @@ export default async function ProviderDeskPage({
       </article>
       ) : null}
       {tab === "reminders" ? (
-      <article className="card" style={{ marginBottom: 16 }}>
+      <article className="card">
         <h2>Reminder mail</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <p className="fine">
           Notes Zignal has emailed to this desk. The ISP cannot change them. Subscriber renewal wording saved on the desk is shown below.
         </p>
         {provider.reminder_soon_title || provider.reminder_due_title ? (
@@ -522,12 +542,12 @@ export default async function ProviderDeskPage({
           </article>
         ))}
       </section>
-      <article className="card" style={{ marginBottom: 16 }}>
+      <article className="card">
         <p>
           {facts.overdue} {facts.overdue === 1 ? "line is" : "lines are"} past the renewal date. A past-due line stays active until the ISP sets it to Paused, Disconnect, Collection, or Write off.
         </p>
       </article>
-      <article className="card account-sheet" style={{ marginBottom: 16 }}>
+      <article className="card account-sheet">
         <h2>ISP</h2>
         <dl className="fact-grid">
           <Fact label="ISP" value={provider.name} />
@@ -577,7 +597,7 @@ export default async function ProviderDeskPage({
             Reset
           </FilterLink>
         </FilterForm>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <p className="fine">
           {people.total === 0
             ? query.q || query.status || query.billing
               ? "No subscribers match that filter."

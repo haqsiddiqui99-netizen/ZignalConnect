@@ -41,7 +41,7 @@ export default async function NewCustomerPage({
           <h1>Add a subscriber</h1>
         </div>
         <Link className="btn import-link" href="/provider/import">
-          Import Subscribers
+          Import subscribers
         </Link>
       </header>
       <Banner error={error} />

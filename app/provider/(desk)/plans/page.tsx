@@ -10,9 +10,9 @@ import { getImportReport, listChargeCatalogue, listDiscountCatalogue, listPlans 
 export const metadata = { title: "Catalogue" };
 
 const TABS = [
-  { id: "plan", label: "Internet Plan" },
+  { id: "plan", label: "Internet plan" },
   { id: "charge", label: "One-time charge" },
-  { id: "discount", label: "Promo & Discounts" },
+  { id: "discount", label: "Promos and discounts" },
 ] as const;
 
 const KIND_LABEL: Record<string, string> = {
@@ -78,7 +78,7 @@ export default async function PlansPage({
             <>
               <h2>{editingPlan ? `Edit ${editingPlan.name}` : "New internet plan"}</h2>
               {editingPlan ? (
-                <p className="fine" style={{ marginTop: -6, marginBottom: 12 }}>
+                <p className="fine">
                   <Link href="/provider/plans?tab=plan">Add a new plan instead</Link>
                 </p>
               ) : null}
@@ -114,7 +114,7 @@ export default async function PlansPage({
             <>
               <h2>{editingCharge ? `Edit ${editingCharge.name}` : "New one-time charge"}</h2>
               {editingCharge ? (
-                <p className="fine" style={{ marginTop: -6, marginBottom: 12 }}>
+                <p className="fine">
                   <Link href="/provider/plans?tab=charge">Add a new charge instead</Link>
                 </p>
               ) : null}
@@ -150,7 +150,7 @@ export default async function PlansPage({
             <>
               <h2>{editingDiscount ? `Edit ${editingDiscount.name}` : "New promo or discount"}</h2>
               {editingDiscount ? (
-                <p className="fine" style={{ marginTop: -6, marginBottom: 12 }}>
+                <p className="fine">
                   <Link href="/provider/plans?tab=discount">Add a new promo instead</Link>
                 </p>
               ) : null}
@@ -189,7 +189,7 @@ export default async function PlansPage({
         </article>
         <article className="card">
           <h2>Import catalogue</h2>
-          <p className="fine" style={{ marginBottom: 12 }}>
+          <p className="fine">
             The template is one spreadsheet with three tabs: Internet Plan, One-time charge, and Promo &amp; Discounts. Fill any of them and upload the file. A name that already exists is skipped.
           </p>
           <form action={importCatalogue} className="stack">
@@ -204,7 +204,7 @@ export default async function PlansPage({
             </label>
             <SubmitButton pendingLabel="Importing…">Import catalogue</SubmitButton>
           </form>
-          <div style={{ marginTop: 16 }}>
+          <div className="after-form">
             <h2>Last import</h2>
             {!report ? (
               <p className="fine">Nothing has been imported on this desk yet.</p>
@@ -240,7 +240,7 @@ export default async function PlansPage({
           </div>
         </article>
       </section>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>{TABS.find((item) => item.id === tab)?.label}</h2>
         {tab === "plan" ? (
           plans.length === 0 ? (
@@ -330,7 +330,7 @@ export default async function PlansPage({
                     <tr key={item.id}>
                       <td>{item.name}</td>
                       <td>{appliesLabel(item.applies_to)}</td>
-                      <td>{item.frequency === "once" ? "One time" : "Always with Internet Plan"}</td>
+                      <td>{item.frequency === "once" ? "One time" : "Always with the internet plan"}</td>
                       <td>{item.mode === "percent" ? `${item.value}%` : formatInr(item.value)}</td>
                       <td>
                         <Link href={`/provider/plans?tab=discount&edit=${item.id}`}>Edit</Link>

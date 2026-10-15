@@ -69,16 +69,23 @@ function AccountBoard({
       </div>
       <aside className={tone ? `credit-panel ${tone}` : "credit-panel"}>
         <span>Credit rating</span>
-        <strong>{score || "—"}</strong>
-        <p>{rated ? rated[2] : credit.placeholder}</p>
-        <ol aria-hidden="true">
-          {[1, 2, 3, 4, 5].map((mark) => (
-            <li key={mark} className={score >= mark ? "on" : undefined}>
-              {mark}
+        <ol>
+          {(
+            [
+              [1, "Overdue"],
+              [2, "Often late"],
+              [3, "A few days late"],
+              [4, "On the due date"],
+              [5, "Early"],
+            ] as const
+          ).map(([mark, label]) => (
+            <li key={mark} className={score === mark ? "on" : undefined}>
+              <b>{mark}</b>
+              <span>{label}</span>
             </li>
           ))}
         </ol>
-        <p className="credit-key">5 early · 4 on the due date · 3 a few days late · 2 often late · 1 overdue</p>
+        <p className="credit-note">Set automatically from the billing record.</p>
       </aside>
     </div>
   );
@@ -178,7 +185,7 @@ export function SubscriberForm({
           <div className="row-2">
             <label className="field">
               <span>
-                Internet Plan <i className="req" aria-hidden="true">*</i>
+                Internet plan <i className="req" aria-hidden="true">*</i>
               </span>
               <select name="plan_id" defaultValue={subscriber.plan_id} required>
                 {plans.some((plan) => plan.id === subscriber.plan_id) ? null : (

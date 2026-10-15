@@ -4,7 +4,7 @@ import { getSession, homePath } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
-import { LOGIN_CODE_ENABLED, pendingLogin } from "@/lib/login-code";
+import { pendingLogin } from "@/lib/login-code";
 import { BrandMark } from "@/components/brand-mark";
 import { SITE_LINKS } from "@/components/site-shell";
 import { Banner } from "@/components/ui";
@@ -42,13 +42,13 @@ export default async function LoginPage({
   if (session) redirect(homePath(session));
   getDb();
   const { error, step, notice } = await searchParams;
-  const pending = LOGIN_CODE_ENABLED && step === "code" ? await pendingLogin() : null;
+  const pending = step === "code" ? await pendingLogin() : null;
 
   return (
     <main className="login">
       <section className="login-brand">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_DATA) }} />
-        <div>
+        <div className="login-top">
           <div className="brand-lockup">
             <BrandMark />
             <div>
@@ -85,16 +85,33 @@ export default async function LoginPage({
               <span>Premium · 3,000 to 30,000 · {CATALOG.premium_3000.trialDays}-day trial</span>
             </div>
           </div>
+          <ul className="login-trust">
+            <li>
+              <b>30-day trial</b>
+              <span>The desk opens with your subscriber list. No card is charged during the trial.</span>
+            </li>
+            <li>
+              <b>Your subscribers pay you</b>
+              <span>Cash and your own UPI. Their money does not come to Zignal.</span>
+            </li>
+            <li>
+              <b>Set up with you</b>
+              <span>The first desks are opened in person. Your list is imported, and the overdue lines are on the screen the same day.</span>
+            </li>
+          </ul>
         </div>
       </section>
       <section className="login-panel">
+        <p className="login-open">
+          New ISP? <Link href="/signup">Open a desk here</Link>
+        </p>
         <div className="panel-card">
           <h2>Sign in</h2>
           <Banner error={error} notice={notice === "sent" ? "A new code is on its way." : undefined} />
           {pending ? (
             <>
               <p className="fine" style={{ marginTop: 16 }}>
-                Enter the 6-digit code sent to {pending.email}. It works for 10 minutes.
+                Enter the 6-digit code sent {pending.channel === "whatsapp" ? "on WhatsApp to" : "to"} {pending.where}. It works for 10 minutes.
               </p>
               <form action={confirmLogin} className="stack" style={{ marginTop: 16 }}>
                 <label className="field">
@@ -109,7 +126,7 @@ export default async function LoginPage({
                     minLength={6}
                     maxLength={6}
                     pattern="[0-9]{6}"
-                    title="6-digit code from your email"
+                    title="6-digit sign-in code"
                   />
                 </label>
                 <SubmitButton>Continue</SubmitButton>
@@ -132,18 +149,17 @@ export default async function LoginPage({
                 <input name="email" type="email" autoComplete="username" required />
               </label>
               <label className="field">
-                <span>Password</span>
-                <input name="password" type="password" autoComplete="current-password" required />
+                <span className="password-line">
+                  Password
+                  <Link href="/forgot">Forgot password</Link>
+                </span>
+                <input name="password" type="password" autoComplete="current-password" aria-label="Password" required />
               </label>
-              {LOGIN_CODE_ENABLED ? <p className="fine">After your password, a code is sent to this email.</p> : null}
+              <p className="fine">A desk sign-in then asks for a code sent to the email or WhatsApp chosen for that desk.</p>
               <SubmitButton>Sign in</SubmitButton>
             </form>
           )}
-          <p className="fine" style={{ marginTop: 14 }}>
-            <Link href="/forgot">Forgot password</Link>
-            {" · "}
-            New ISP? <Link href="/signup">Open a desk</Link>
-            {" · "}
+          <p className="fine login-legal" style={{ marginTop: 14 }}>
             <Link href="/privacy">Privacy</Link>
             {" · "}
             <Link href="/terms">Terms</Link>

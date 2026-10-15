@@ -29,7 +29,7 @@ export default async function ImportPage({
             <Link className="btn small" href="/provider/subscriber">
               ← All subscribers
             </Link>
-            <h1>Import Subscribers</h1>
+            <h1>Import subscribers</h1>
           </div>
           <p>
             {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}. Overflow allows{" "}
@@ -54,10 +54,10 @@ export default async function ImportPage({
                 <span>Spreadsheet file</span>
                 <input name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
               </label>
-              <SubmitButton pendingLabel="Importing…">Import Subscribers</SubmitButton>
+              <SubmitButton pendingLabel="Importing…">Import subscribers</SubmitButton>
             </form>
           )}
-          <div className="stack" style={{ marginTop: 16 }}>
+          <div className="stack after-form">
             <strong>Use the template tabs.</strong>
             <ol className="fine info-list">
               <li>The file has four tabs: Account, Internet plan, One-time charge, and Discount. The same email ties the rows together. Upload it again for an email that is already on the desk to add the plan, charge, and discount lines. A file with only those tabs updates existing subscribers.</li>
@@ -70,7 +70,7 @@ export default async function ImportPage({
               <li>Tax on invoice is a dropdown: Included, 5%, 12%, 18%, or 22%. Included means tax is already in the price.</li>
             </ol>
           </div>
-          <p className="fine" style={{ marginTop: 12 }}>
+          <p className="fine">
             Internet plans this file can use: {plans.map((plan) => plan.name).join(", ") || "none yet"}.
           </p>
           <p className="fine">

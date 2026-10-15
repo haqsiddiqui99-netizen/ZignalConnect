@@ -4,7 +4,7 @@ import { Banner } from "@/components/ui";
 import { listSupport, listSupportFollowups } from "@/lib/queries";
 import { supportIsFinished } from "@/lib/support";
 
-export const metadata = { title: "My Support" };
+export const metadata = { title: "Support" };
 
 export default async function OperatorSupport({
   searchParams,
@@ -23,7 +23,7 @@ export default async function OperatorSupport({
     <>
       <header className="page-head">
         <div>
-          <h1>My Support</h1>
+          <h1>Support</h1>
           <p>
             {tickets.length} messages from providers · {open} still open. Open a ticket to reply or change its status. The window closes after you save.
           </p>

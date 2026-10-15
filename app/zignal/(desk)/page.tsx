@@ -105,12 +105,12 @@ export default async function OperatorHome() {
           <b>{desk.paused}</b>
         </article>
       </section>
-      <article className="card" style={{ marginBottom: 16 }}>
+      <article className="card">
         <p>
           {desk.subscribers} subscribers across every desk. {desk.overdue} lines are past their renewal date. A past-due
           line stays active until someone sets it to Paused, Disconnect, Collection, or Write off.
         </p>
-        <p className="fine" style={{ marginTop: 8 }}>
+        <p className="fine">
           {desk.plans.map((item) => `${item.label} ${item.providers}`).join(" · ")}. Fees are {formatInr(CATALOG.pro.price)}{" "}
           Pro, {formatInr(CATALOG.ultra.price)} Ultra, and {formatInr(CATALOG.premium_3000.price)} to{" "}
           {formatInr(CATALOG.premium_30000.price)} across the Premium tiers.

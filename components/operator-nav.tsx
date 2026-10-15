@@ -8,7 +8,7 @@ const items = [
   { href: "/zignal/mail", label: "Desk mail" },
   { href: "/zignal/revenue", label: "Revenue" },
   { href: "/zignal/promos", label: "Promos" },
-  { href: "/zignal/support", label: "My Support" },
+  { href: "/zignal/support", label: "Support" },
   { href: "/zignal/settings", label: "Settings" },
 ];
 

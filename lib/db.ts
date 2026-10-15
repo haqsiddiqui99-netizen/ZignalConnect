@@ -1031,6 +1031,36 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
   if (providerColumns.size > 0 && !providerColumns.has("promise_on")) {
     db.exec("ALTER TABLE providers ADD COLUMN promise_on TEXT NOT NULL DEFAULT ''");
   }
+  if (providerColumns.size > 0) {
+    for (const name of ["collect_upi", "collect_payee", "bank_holder", "bank_account", "bank_ifsc", "bank_pan", "bank_status", "bank_changed_at"]) {
+      if (!providerColumns.has(name)) db.exec(`ALTER TABLE providers ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+    }
+    if (!providerColumns.has("otp_via")) db.exec("ALTER TABLE providers ADD COLUMN otp_via TEXT NOT NULL DEFAULT 'email'");
+  }
+  const codeColumns = columnNames(db, "login_codes");
+  if (codeColumns.size > 0 && !codeColumns.has("channel")) {
+    db.exec("ALTER TABLE login_codes ADD COLUMN channel TEXT NOT NULL DEFAULT 'email'");
+  }
+  if (codeColumns.size > 0 && !codeColumns.has("phone")) {
+    db.exec("ALTER TABLE login_codes ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upi_claims (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      utr TEXT NOT NULL,
+      line_items TEXT NOT NULL DEFAULT '',
+      promo_name TEXT NOT NULL DEFAULT '',
+      renew_date TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      decided_at TEXT NOT NULL DEFAULT '',
+      decided_by TEXT NOT NULL DEFAULT '',
+      payment_id INTEGER NOT NULL DEFAULT 0
+    );
+  `);
   if (columnNames(db, "plan_coupons").size > 0 && !columnNames(db, "plan_coupons").has("provider_id")) {
     db.exec("ALTER TABLE plan_coupons ADD COLUMN provider_id INTEGER NOT NULL DEFAULT 0");
   }

@@ -29,7 +29,7 @@ export default async function DeskMailPage({
       <Banner error={query.error} notice={query.notice} />
       <article className="card">
         <h2>Automatic notes</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           A welcome email goes out when a desk opens. The two notes below go 3 days before the desk fee, and on the due
           date. Use {"{name}"}, {"{plan}"}, {"{date}"}, {"{amount}"}, and {"{isp}"}. No card is charged.
         </p>
@@ -60,9 +60,9 @@ export default async function DeskMailPage({
           <SubmitButton className="btn small">Save automatic notes</SubmitButton>
         </form>
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Send a note</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           Send now to one open desk, or to every open desk. Email is the only medium connected. Message and WhatsApp are
           not connected yet.
         </p>
@@ -99,7 +99,7 @@ export default async function DeskMailPage({
           </SubmitButton>
         </form>
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Notes sent</h2>
         {sent.length === 0 ? (
           <p className="fine">Nothing has been sent yet.</p>

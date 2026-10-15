@@ -5,7 +5,7 @@ import { Banner } from "@/components/ui";
 import { COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, complaintCode, complaintIsFinished, isComplaintStatus, slaLabel, type ComplaintStatus } from "@/lib/complaints";
 import { listComplaints, listStaff } from "@/lib/queries";
 
-export const metadata = { title: "Complaint" };
+export const metadata = { title: "Complaints" };
 
 export default async function AdminComplaints({
   searchParams,
@@ -71,7 +71,7 @@ export default async function AdminComplaints({
     <>
       <header className="page-head">
         <div>
-          <h1>Complaint</h1>
+          <h1>Complaints</h1>
           <p>
             {tickets.length} on this desk · {open.length} still open
             {breached > 0 ? ` · ${breached} past SLA` : ""}.
@@ -81,7 +81,7 @@ export default async function AdminComplaints({
       <Banner error={query.error} notice={query.notice} />
       {tickets.length === 0 ? null : (
         <>
-          <section className="stats" aria-label="Complaint summary">
+          <section className="stats" aria-label="Complaints summary">
             {COMPLAINT_STATUSES.map((item) => (
               <article key={item.value} className="stat">
                 <span>{item.label}</span>
@@ -89,7 +89,7 @@ export default async function AdminComplaints({
               </article>
             ))}
           </section>
-          <article className="card" style={{ marginBottom: 18 }}>
+          <article className="card">
             <h2>By assignee</h2>
             <div className="table-wrap">
               <table>

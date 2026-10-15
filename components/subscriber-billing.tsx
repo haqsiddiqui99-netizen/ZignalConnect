@@ -305,7 +305,7 @@ export function SubscriberBilling({
       {part === "invoice" && view !== "closed" ? (
       <article className="card">
         <h2>Open invoice</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <p className="fine">
           {invoiceNote} These lines are not on a receipt yet. The amount due is {formatInr(bill.due)}.
         </p>
         {bill.lines.length === 0 ? (
@@ -400,7 +400,7 @@ export function SubscriberBilling({
       {part === "invoice" && view === "closed" ? (
       <article className="card">
         <h2>Closed invoices</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <p className="fine">
           A closed invoice is a full payment that already has a receipt.
         </p>
         {closedInvoices.length === 0 ? (
@@ -726,7 +726,7 @@ export function SubscriberBilling({
       {part === "payment" ? (
       <article className="card">
         <h2>Payments</h2>
-        <p className="fine" style={{ margin: "8px 0 12px" }}>
+        <p className="fine">
           A payment is the billed invoice. Editing the amount, method, or note updates the receipt and leaves the renewal date where it is.
         </p>
         {payments.length === 0 ? (
@@ -909,7 +909,7 @@ function DiscountFields({
           <span>Frequency</span>
           <select name="frequency" defaultValue={frequency === "recurring" ? "recurring" : "once"}>
             <option value="once">One time</option>
-            <option value="recurring">Always with Internet Plan</option>
+            <option value="recurring">Always with the internet plan</option>
           </select>
         </label>
         <label className="field">

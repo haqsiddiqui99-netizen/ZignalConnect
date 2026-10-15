@@ -28,7 +28,7 @@ export default async function BillingPage({
     <>
       <header className="page-head">
         <div>
-          <h1>Desk plan</h1>
+          <h1>Upgrade</h1>
           <p>
             {session.brandName} is on {planFamily(usage.plan) === "premium" ? "Premium" : usage.catalog.label}.{" "}
             {usage.customers} customers, {usage.staff} staff.
@@ -51,7 +51,7 @@ export default async function BillingPage({
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
-      <p className="fine" style={{ marginBottom: 12 }}>
+      <p className="fine">
         Upgrade opens a payment page for that plan. During a trial, Pay on the current plan opens the same page, so the desk can be paid before the trial ends. The desk fee follows the term you pick. The ₹3 subscriber overflow, extra staff at ₹10
         each, and extra messages at ₹0.50 stay monthly. The payment gateway is the only piece still to connect.
       </p>
@@ -64,9 +64,9 @@ export default async function BillingPage({
         onTrial={usage.trial.active}
         daysLeft={usage.trial.daysLeft}
       />
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>ISP details</h2>
-        <p className="fine" style={{ marginBottom: 12 }}>
+        <p className="fine">
           Subscribers see this name on their portal. The GSTIN, address, and logo go on the receipts they download.
         </p>
         {session.isOwner ? (

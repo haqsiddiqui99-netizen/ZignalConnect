@@ -34,6 +34,7 @@ import {
   todayISO,
 } from "@/lib/format";
 import { deskWelcomeMail, isPasswordVia, loginCodeMail, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
+import { sendWhatsAppCode } from "@/lib/whatsapp";
 import { deskClosedMessage, latestQuitDate, settleDesk } from "@/lib/desk-close";
 import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
@@ -58,7 +59,7 @@ import { readCatalogueWorkbook, type SheetRow } from "@/lib/catalogue-book";
 import { blankChargeAmount, invoiceFor, parseChargeTax, readBillSettings, readBillTax, readCharges, readDiscounts, readPlanLines } from "@/lib/charges";
 import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
-import { accountCategoryFromImport, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUsage, isAccountCategory, listCustomerCharges, listOpenDesks, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
+import { accountCategoryFromImport, collectOptions, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUpiClaim, getUsage, isAccountCategory, maskAccount, listCustomerCharges, listOpenDesks, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
 
 function go(path: string, params?: Record<string, string>): never {
@@ -107,18 +108,37 @@ export async function login(formData: FormData) {
     const closed = deskClosedMessage(user.id);
     if (closed) go("/", { error: closed });
   }
-  if (!LOGIN_CODE_ENABLED) {
+  if (user.kind !== "desk" || user.role !== "admin" || !LOGIN_CODE_ENABLED) {
     await setSession(user.id, user.kind);
     if (user.kind === "operator") redirect("/zignal");
     redirect(user.role === "admin" ? "/provider" : "/subscriber");
   }
-  if (!mailConfigured()) go("/", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
-  const code = await beginLoginCode({ userId: user.id, kind: user.kind, email: user.email });
+  const desk = one<{ otp_via: string; support_phone: string; mobile: string }>(
+    `SELECT p.otp_via, p.support_phone, u.mobile
+     FROM users u JOIN providers p ON p.id = u.provider_id WHERE u.id = ?`,
+    user.id,
+  );
+  const channel = desk?.otp_via === "whatsapp" ? "whatsapp" : "email";
+  const phone = (desk?.mobile || desk?.support_phone || "").replace(/\s+/g, "");
+  if (channel === "whatsapp" && !/^[6-9]\d{9}$/.test(phone)) {
+    go("/", { error: "This desk has no WhatsApp number for the sign-in code. Add a mobile in Settings, or choose email." });
+  }
+  if (channel === "email" && !mailConfigured()) {
+    go("/", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
+  }
+  const code = await beginLoginCode({ userId: user.id, kind: "desk", email: user.email, channel, phone });
   const mail = loginCodeMail(code);
-  const sent = await sendMail(user.email, mail.subject, mail.text, mail.html);
+  const sent = channel === "whatsapp" ? await sendWhatsAppCode(phone, code) : await sendMail(user.email, mail.subject, mail.text, mail.html);
   if (!sent.ok) {
     await dropLoginCode();
-    go("/", { error: "The sign-in code could not be sent. Try again in a little while." });
+    go("/", {
+      error:
+        sent.reason === "unconfigured"
+          ? channel === "whatsapp"
+            ? "WhatsApp is not connected yet, so the sign-in code was not sent."
+            : "Sign-in email is not connected yet. Add the mail account, then try again."
+          : "The sign-in code could not be sent. Try again in a little while.",
+    });
   }
   redirect("/?step=code");
 }
@@ -126,7 +146,7 @@ export async function login(formData: FormData) {
 export async function confirmLogin(formData: FormData) {
   if (!LOGIN_CODE_ENABLED) redirect("/");
   const code = readText(formData, "code").replace(/\s+/g, "");
-  if (!/^\d{6}$/.test(code)) go("/?step=code", { error: "Enter the 6-digit code from your email." });
+  if (!/^\d{6}$/.test(code)) go("/?step=code", { error: "Enter the 6-digit sign-in code." });
   const result = await checkLoginCode(code);
   if (!result.ok) {
     const error =
@@ -147,7 +167,6 @@ export async function confirmLogin(formData: FormData) {
 
 export async function resendLoginCode() {
   if (!LOGIN_CODE_ENABLED) redirect("/");
-  if (!mailConfigured()) go("/?step=code", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
   const next = await replaceLoginCode();
   if (!next.ok) {
     go(next.reason === "soon" ? "/?step=code" : "/", {
@@ -155,8 +174,18 @@ export async function resendLoginCode() {
     });
   }
   const mail = loginCodeMail(next.code);
-  const sent = await sendMail(next.email, mail.subject, mail.text, mail.html);
-  if (!sent.ok) go("/?step=code", { error: "The sign-in code could not be sent. Try again in a little while." });
+  const sent =
+    next.channel === "whatsapp" ? await sendWhatsAppCode(next.phone, next.code) : await sendMail(next.email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) {
+    go("/?step=code", {
+      error:
+        sent.reason === "unconfigured"
+          ? next.channel === "whatsapp"
+            ? "WhatsApp is not connected yet, so the sign-in code was not sent."
+            : "Sign-in email is not connected yet. Add the mail account, then try again."
+          : "The sign-in code could not be sent. Try again in a little while.",
+    });
+  }
   redirect("/?step=code&notice=sent");
 }
 
@@ -1343,24 +1372,46 @@ export async function payBill(formData: FormData) {
     go("/subscriber/pay", { promo: promoCode, error: "Auto-pay uses a method saved in Settings. Choose a card, UPI, or net banking for this bill." });
   }
   const { payment } = instrument;
+  if (!collectOptions(getProvider(session.providerId)).gateway) {
+    go("/subscriber/pay", { promo: promoCode, error: "Card and net banking are not on for this connection yet." });
+  }
 
-  const today = todayISO();
-  const periodEnd = renewalAfterPayment(current.renew_date, current.promise_on, today, current.bill_cycle);
-  const periodStart = current.renew_date > today ? current.renew_date : today;
-  const reference = makeRef();
+  const bill = subscriberBill(session.providerId, current, promoCode);
+  const note = [payment.detail ? `Payer reference: ${payment.detail}` : "Paid from the subscriber portal", bill.promoName ? `Promo ${bill.promoName}` : ""]
+    .filter(Boolean)
+    .join(". ");
+
+  if (bill.payable > 0) {
+    const result = collectSubscriberPayment(current.id, { ...payment, amount: bill.payable });
+    if (!result.ok) go("/subscriber/pay", { promo: bill.promoName, notice: "gateway" });
+  }
+
+  const paymentId = settleSubscriberBill(current, {
+    amount: bill.payable,
+    method: bill.payable === 0 ? "Promo" : payment.method,
+    reference: makeRef(),
+    note,
+    lineItems: bill.lineItems,
+  });
+
+  if (current.status !== "active") await syncNetworkLine(session.providerId, current.line_name, true, { quietIfIdle: true });
+  refresh();
+  go(`/subscriber/receipt/${paymentId}`);
+}
+
+type BillableSubscriber = NonNullable<ReturnType<typeof getSubscriberByUserId>>;
+
+function subscriberBill(providerId: number, current: BillableSubscriber, promoCode: string) {
   const charges = listCustomerCharges(current.id);
   const discounts = listCustomerDiscounts(current.id);
   const extraPlans = listCustomerExtraPlans(current.id);
-  const built = invoiceFor(current, charges, {
-    discounts,
-    extraPlans,
-  });
+  const built = invoiceFor(current, charges, { discounts, extraPlans });
   const due = built.due;
   if (due <= 0) go("/subscriber/pay", { error: "Nothing is due on this line." });
   let promoName = "";
   let off = 0;
   if (promoCode) {
-    const promo = findCataloguePromo(session.providerId, promoCode);
+    const promo = findCataloguePromo(providerId, promoCode);
     if (!promo || (promo.mode !== "amount" && promo.mode !== "percent")) {
       go("/subscriber/pay", { error: "That promo code is not on this connection." });
     }
@@ -1370,19 +1421,17 @@ export async function payBill(formData: FormData) {
     promoName = promo.name;
     off = promoOff(due, promo.mode, promo.value);
   }
-  const payable = Math.max(0, due - off);
-  const note = [payment.detail ? `Payer reference: ${payment.detail}` : "Paid from the subscriber portal", promoName ? `Promo ${promoName}` : ""]
-    .filter(Boolean)
-    .join(". ");
-  const lineItems = JSON.stringify(
-    off > 0 ? [...built.lines, { description: `${promoName} promo`, amount: -off }] : built.lines,
-  );
+  const lineItems = JSON.stringify(off > 0 ? [...built.lines, { description: `${promoName} promo`, amount: -off }] : built.lines);
+  return { payable: Math.max(0, due - off), promoName, lineItems };
+}
 
-  if (payable > 0) {
-    const result = collectSubscriberPayment(current.id, { ...payment, amount: payable });
-    if (!result.ok) go("/subscriber/pay", { promo: promoName, notice: "gateway" });
-  }
-
+function settleSubscriberBill(
+  current: BillableSubscriber,
+  input: { amount: number; method: string; reference: string; note: string; lineItems: string },
+) {
+  const today = todayISO();
+  const periodEnd = renewalAfterPayment(current.renew_date, current.promise_on, today, current.bill_cycle);
+  const periodStart = current.renew_date > today ? current.renew_date : today;
   const db = getDb();
   let paymentId = 0;
   db.exec("BEGIN");
@@ -1392,14 +1441,14 @@ export async function payBill(formData: FormData) {
         (customer_id, amount, method, reference, paid_at, period_start, period_end, note, kind, line_items)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'full', ?)`,
       current.id,
-      payable,
-      payable === 0 ? "Promo" : payment.method,
-      reference,
+      input.amount,
+      input.method,
+      input.reference,
       nowStamp(),
       periodStart,
       periodEnd,
-      note,
-      lineItems,
+      input.note,
+      input.lineItems,
     );
     paymentId = Number(inserted.lastInsertRowid);
     run("UPDATE customers SET renew_date = ?, status = 'active', promise_on = '', promise_was_down = 0 WHERE id = ?", periodEnd, current.id);
@@ -1411,10 +1460,166 @@ export async function payBill(formData: FormData) {
     db.exec("ROLLBACK");
     throw error;
   }
+  return paymentId;
+}
 
+export async function sendUpiPayment(formData: FormData) {
+  const session = await requireRole("customer");
+  const current = getSubscriberByUserId(session.uid);
+  if (!current) go("/subscriber", { error: "No service line is linked to this login." });
+  const provider = getProvider(session.providerId);
+  if (!collectOptions(provider).upi) go("/subscriber/pay", { error: "UPI is not on for this connection. Pay at the office." });
+  const promoCode = readText(formData, "promo");
+  const utr = readText(formData, "utr").replace(/\s+/g, "");
+  if (!/^\d{12}$/.test(utr)) go("/subscriber/pay", { promo: promoCode, error: "Enter the 12-digit UPI reference from your UPI app." });
+  const waiting = one(
+    "SELECT id FROM upi_claims WHERE customer_id = ? AND status = 'pending' AND renew_date = ?",
+    current.id,
+    current.renew_date,
+  );
+  if (waiting) go("/subscriber/pay", { error: "A UPI payment for this bill is already waiting for your provider." });
+  if (one("SELECT id FROM upi_claims WHERE provider_id = ? AND utr = ? AND status <> 'rejected'", session.providerId, utr)) {
+    go("/subscriber/pay", { promo: promoCode, error: "That UPI reference has already been sent." });
+  }
+  const bill = subscriberBill(session.providerId, current, promoCode);
+  if (bill.payable <= 0) go("/subscriber/pay", { error: "Nothing is due on this line." });
+  run(
+    `INSERT INTO upi_claims (provider_id, customer_id, amount, utr, line_items, promo_name, renew_date, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    session.providerId,
+    current.id,
+    bill.payable,
+    utr,
+    bill.lineItems,
+    bill.promoName,
+    current.renew_date,
+    nowStamp(),
+  );
+  refresh();
+  go("/subscriber/pay", { notice: `UPI reference ${utr} was sent to ${session.brandName}. The renewal moves when they confirm the money arrived.` });
+}
+
+export async function confirmUpiPayment(formData: FormData) {
+  const session = await requireRole("admin");
+  const claim = getUpiClaim(Number(formData.get("claim_id")), session.providerId);
+  if (!claim || claim.status !== "pending") go("/provider", { error: "That UPI payment was already handled." });
+  const current = getSubscriber(claim.customer_id, session.providerId);
+  if (!current) go("/provider", { error: "That subscriber was not found." });
+  if (current.renew_date !== claim.renew_date) {
+    go("/provider", {
+      error: `${claim.customer_name}'s line was renewed after this UPI payment was sent. Check the bank, then reject it or record it on the subscriber.`,
+    });
+  }
+  const paymentId = settleSubscriberBill(current, {
+    amount: claim.amount,
+    method: "UPI",
+    reference: claim.utr,
+    note: [`UPI reference ${claim.utr}, confirmed by ${session.name}`, claim.promo_name ? `Promo ${claim.promo_name}` : ""].filter(Boolean).join(". "),
+    lineItems: claim.line_items,
+  });
+  run(
+    "UPDATE upi_claims SET status = 'confirmed', decided_at = ?, decided_by = ?, payment_id = ? WHERE id = ?",
+    nowStamp(),
+    session.name,
+    paymentId,
+    claim.id,
+  );
   if (current.status !== "active") await syncNetworkLine(session.providerId, current.line_name, true, { quietIfIdle: true });
   refresh();
-  go(`/subscriber/receipt/${paymentId}`);
+  go("/provider", { notice: `${formatInr(claim.amount)} from ${claim.customer_name} confirmed. The renewal moved and the receipt is issued.` });
+}
+
+export async function rejectUpiPayment(formData: FormData) {
+  const session = await requireRole("admin");
+  const claim = getUpiClaim(Number(formData.get("claim_id")), session.providerId);
+  if (!claim || claim.status !== "pending") go("/provider", { error: "That UPI payment was already handled." });
+  run("UPDATE upi_claims SET status = 'rejected', decided_at = ?, decided_by = ? WHERE id = ?", nowStamp(), session.name, claim.id);
+  refresh();
+  go("/provider", { notice: `UPI reference ${claim.utr} from ${claim.customer_name} was rejected. The renewal is unchanged.` });
+}
+
+const UPI_ID = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
+const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const PAN = /^[A-Z]{5}\d{4}[A-Z]$/;
+
+export async function saveCollectUpi(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner can change how subscribers pay." });
+  const upi = readText(formData, "collect_upi").replace(/\s+/g, "");
+  const payee = readText(formData, "collect_payee");
+  if (upi && !UPI_ID.test(upi)) go("/provider/settings", { error: "Enter a UPI ID such as harbourfiber@okhdfcbank." });
+  if (upi && (payee.length < 2 || payee.length > 60)) go("/provider/settings", { error: "Enter the payee name shown in the UPI app." });
+  run("UPDATE providers SET collect_upi = ?, collect_payee = ? WHERE id = ?", upi, upi ? payee : "", session.providerId);
+  refresh();
+  go("/provider/settings", {
+    notice: upi ? "UPI saved. Subscribers now see UPI and cash on the Pay page." : "UPI removed. Subscribers no longer see UPI.",
+  });
+}
+
+export async function saveCollectBank(formData: FormData) {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner can change how subscribers pay." });
+  const provider = getProvider(session.providerId);
+  if (!provider) go("/provider/settings", { error: "This desk was not found." });
+  const holder = readText(formData, "bank_holder");
+  const typed = readText(formData, "bank_account").replace(/\s+/g, "");
+  const confirm = readText(formData, "bank_account_confirm").replace(/\s+/g, "");
+  const ifsc = readText(formData, "bank_ifsc").replace(/\s+/g, "").toUpperCase();
+  const pan = readText(formData, "bank_pan").replace(/\s+/g, "").toUpperCase();
+  if (holder.length < 2 || holder.length > 80) go("/provider/settings", { error: "Enter the account holder name as the bank shows it." });
+  if (!typed && !provider.bank_account) go("/provider/settings", { error: "Enter the bank account number." });
+  if (typed) {
+    if (!/^\d{9,18}$/.test(typed)) go("/provider/settings", { error: "The account number is 9 to 18 digits." });
+    if (typed !== confirm) go("/provider/settings", { error: "Type the same account number in both boxes." });
+  }
+  if (!IFSC.test(ifsc)) go("/provider/settings", { error: "Enter the 11-character IFSC, such as HDFC0001234." });
+  if (!PAN.test(pan)) go("/provider/settings", { error: "Enter the 10-character PAN, such as ABCDE1234F." });
+  const account = typed || provider.bank_account;
+  const changed = account !== provider.bank_account || ifsc !== provider.bank_ifsc || holder !== provider.bank_holder || pan !== provider.bank_pan;
+  if (!changed) go("/provider/settings", { notice: "Nothing changed in the bank account." });
+  run(
+    "UPDATE providers SET bank_holder = ?, bank_account = ?, bank_ifsc = ?, bank_pan = ?, bank_status = 'pending', bank_changed_at = ? WHERE id = ?",
+    holder,
+    account,
+    ifsc,
+    pan,
+    nowStamp(),
+    session.providerId,
+  );
+  await mailBankChange(session.providerId, session.brandName, `${maskAccount(account)} · ${ifsc}`);
+  refresh();
+  go("/provider/settings", {
+    notice: "Bank account saved. Cards and net banking turn on for subscribers after the payment gateway approves it.",
+  });
+}
+
+export async function removeCollectBank() {
+  const session = await requireRole("admin");
+  if (!session.isOwner) go("/provider/settings", { error: "Only the owner can change how subscribers pay." });
+  run(
+    "UPDATE providers SET bank_holder = '', bank_account = '', bank_ifsc = '', bank_pan = '', bank_status = '', bank_changed_at = ? WHERE id = ?",
+    nowStamp(),
+    session.providerId,
+  );
+  await mailBankChange(session.providerId, session.brandName, "removed");
+  refresh();
+  go("/provider/settings", { notice: "Bank account removed. Subscribers no longer see cards or net banking." });
+}
+
+async function mailBankChange(providerId: number, brandName: string, detail: string) {
+  if (!mailConfigured()) return;
+  const owner = one<{ email: string }>("SELECT email FROM users WHERE provider_id = ? AND is_owner = 1 ORDER BY id LIMIT 1", providerId);
+  if (!owner) return;
+  const body =
+    detail === "removed"
+      ? "The bank account for subscriber payments was removed from this desk. If you did not do this, sign in and check Settings."
+      : `The bank account for subscriber payments on this desk was changed to ${detail}. If you did not do this, sign in and check Settings.`;
+  const mail = renewalMail({ ispName: brandName, signoff: "Zignal Connect", title: "Payout bank account changed", body });
+  try {
+    await sendMail(owner.email, mail.subject, mail.text, mail.html);
+  } catch (error) {
+    console.error("bank change mail", error instanceof Error ? error.message : "failed");
+  }
 }
 
 export async function requestDeskClose(formData: FormData) {
@@ -1527,7 +1732,9 @@ export async function registerProvider(
   if (city.length < 2) return { error: "Enter the city." };
   if (!state || !isIndianState(state)) return { error: "Choose a state." };
   if (country.length < 2 || country.length > 40) return { error: "Enter the country." };
+  const otpVia = readText(formData, "otp_via") === "whatsapp" ? "whatsapp" : "email";
   if (phone && !/^[6-9]\d{9}$/.test(phone)) return { error: "Enter a 10-digit support number, or leave it blank." };
+  if (otpVia === "whatsapp" && !/^[6-9]\d{9}$/.test(phone)) return { error: "Enter the 10-digit WhatsApp number for the sign-in code." };
   if (!Number.isSafeInteger(base) || base < 1) {
     return { error: "Enter how many subscribers you have, as a whole number." };
   }
@@ -1553,8 +1760,8 @@ export async function registerProvider(
   try {
     const provider = run(
       `INSERT INTO providers
-        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode, billing_term)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode, billing_term, otp_via)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       isp,
       plan,
       phone,
@@ -1569,6 +1776,7 @@ export async function registerProvider(
       country,
       pincode,
       term,
+      otpVia,
     );
     providerId = Number(provider.lastInsertRowid);
     const user = run(
@@ -2884,6 +3092,14 @@ export async function retirePlanCoupon(formData: FormData) {
   go("/zignal/settings", { notice: "Promo turned off." });
 }
 
+export async function restorePlanCoupon(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("coupon_id"));
+  run("UPDATE plan_coupons SET active = 1, deactivated_at = '' WHERE id = ? AND active = 0", id);
+  refresh();
+  go("/zignal/settings", { notice: "Promo turned on." });
+}
+
 export async function payUpgrade(formData: FormData) {
   const session = await requireRole("admin");
   const id = Number(readText(formData, "order_id"));
@@ -3328,7 +3544,12 @@ export async function saveDeskSettings(formData: FormData) {
   if (name.length < 2) go("/provider/settings", { error: "Enter your name." });
   if (mobile && !/^[6-9]\d{9}$/.test(mobile)) go("/provider/settings", { error: "Enter a 10-digit mobile, or leave it blank." });
   if (!theme) go("/provider/settings", { error: "Choose light or dark." });
+  const otpVia = session.isOwner && readText(formData, "otp_via") === "whatsapp" ? "whatsapp" : "email";
+  if (session.isOwner && otpVia === "whatsapp" && !/^[6-9]\d{9}$/.test(mobile)) {
+    go("/provider/settings", { error: "WhatsApp needs the 10-digit mobile above." });
+  }
   run("UPDATE users SET name = ?, mobile = ?, theme = ? WHERE id = ? AND provider_id = ?", name, mobile, theme, session.uid, session.providerId);
+  if (session.isOwner) run("UPDATE providers SET otp_via = ? WHERE id = ?", otpVia, session.providerId);
   refresh();
   go("/provider/settings", { notice: "Settings saved." });
 }

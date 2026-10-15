@@ -17,14 +17,14 @@ export default async function PremiumQuotePage({ searchParams }: { searchParams:
 
   return (
     <>
-      <p>
-        <Link className="back" href="/provider/upgrade">
-          Desk plan
-        </Link>
-      </p>
       <header className="page-head">
         <div>
-          <h1>Premium</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/upgrade">
+              ← Upgrade
+            </Link>
+            <h1>Premium</h1>
+          </div>
           <p>The rate is set from the subscriber base. Quarterly is 10% off. Yearly drops two months.</p>
         </div>
       </header>

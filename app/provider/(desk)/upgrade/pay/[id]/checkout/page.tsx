@@ -37,14 +37,15 @@ export default async function UpgradeCheckoutPage({
 
   return (
     <>
-      <p>
-        <Link className="back" href={`/provider/upgrade/pay/${order.id}`}>
-          Order
-        </Link>
-      </p>
-      <header className="page-head pay-page-head">
+      <header className="page-head">
         <div>
-          <h1>Pay {order.plan_label}</h1>
+          <div className="head-line">
+            <Link className="btn small" href={`/provider/upgrade/pay/${order.id}`}>
+              ← Plan payment
+            </Link>
+            <h1>Pay {order.plan_label}</h1>
+          </div>
+          <p>Choose how this payment is collected. The plan stays as it is until the gateway is connected.</p>
         </div>
       </header>
       <Banner error={query.error} notice={notice} />

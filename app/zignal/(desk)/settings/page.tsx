@@ -1,4 +1,4 @@
-import { changeOperatorPassword, retirePlanCoupon, saveOperatorSettings, savePlanCoupon, savePlatformProfile } from "@/lib/actions";
+import { changeOperatorPassword, restorePlanCoupon, retirePlanCoupon, saveOperatorSettings, savePlanCoupon, savePlatformProfile } from "@/lib/actions";
 import { requireOperator } from "@/lib/auth";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
@@ -69,9 +69,9 @@ export default async function OperatorSettings({
           </form>
         </article>
       </section>
-      <article className="card" style={{ marginTop: 14, maxWidth: 720 }}>
+      <article className="card" style={{ maxWidth: 720 }}>
         <h2>Receipt details</h2>
-        <p className="fine" style={{ marginBottom: 12 }}>
+        <p className="fine">
           These details are printed on the receipt a provider downloads after paying Zignal. Leave GSTIN blank until the
           business is registered. Tax is then added at 18% on new desk fees.
         </p>
@@ -116,10 +116,10 @@ export default async function OperatorSettings({
           <SubmitButton className="btn small">Save receipt details</SubmitButton>
         </form>
       </article>
-      <article className="card" style={{ marginTop: 14, maxWidth: 720 }}>
+      <article className="card" style={{ maxWidth: 720 }}>
         <h2>Desk promo codes</h2>
-        <p className="fine" style={{ marginBottom: 12 }}>
-          A provider enters a code on the plan payment page. Choose one ISP to keep it off every other desk. That desk can use it once. Leave it as Any ISP and every desk can use it until you turn it off.
+        <p className="fine">
+          A provider enters a code on the plan payment page. Choose one ISP to keep it off every other desk. That desk can use it once. Leave it as Any ISP and every desk can use it until you turn it off. Turn on makes an off code work again. A desk that already used a one-ISP code cannot use it a second time.
         </p>
         <form action={savePlanCoupon} className="stack">
           <div className="row-2">
@@ -174,14 +174,12 @@ export default async function OperatorSettings({
                     ? "No desk has used this code."
                     : `${coupon.desks} ${coupon.desks === 1 ? "desk" : "desks"} (${coupon.desk_names}) · ${formatInr(coupon.discount)} off${coupon.paid_discount > 0 ? ` · ${formatInr(coupon.paid_discount)} on a paid plan` : " · none paid yet"}`}
                 </span>
-                {coupon.active ? (
-                  <form action={retirePlanCoupon} style={{ marginTop: 8 }}>
-                    <input type="hidden" name="coupon_id" value={coupon.id} />
-                    <button className="btn small" type="submit">
-                      Turn off
-                    </button>
-                  </form>
-                ) : null}
+                <form action={coupon.active ? retirePlanCoupon : restorePlanCoupon} style={{ marginTop: 8 }}>
+                  <input type="hidden" name="coupon_id" value={coupon.id} />
+                  <button className="btn small" type="submit">
+                    {coupon.active ? "Turn off" : "Turn on"}
+                  </button>
+                </form>
               </div>
             ))}
           </div>

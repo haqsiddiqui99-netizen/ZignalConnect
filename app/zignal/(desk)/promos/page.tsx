@@ -55,14 +55,14 @@ export default async function PromoReportPage() {
           <b>{formatInr(paid)}</b>
         </article>
       </section>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Discount in the last 14 days</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           Rupees taken off plan payments on each day. A day with no code stays at zero.
         </p>
         <RevenueChart points={points} />
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>By code</h2>
         <div className="table-wrap">
           <table>
@@ -100,9 +100,9 @@ export default async function PromoReportPage() {
           </table>
         </div>
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>By desk</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           {uses.length === 0 ? "No desk has entered a code yet." : `${uses.length} ${uses.length === 1 ? "use" : "uses"}.`}
         </p>
         {uses.length === 0 ? null : (

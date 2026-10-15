@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { confirmUpiPayment, rejectUpiPayment } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { limitLabel } from "@/lib/entitlements";
-import { formatDate, formatInr, formatSpeed } from "@/lib/format";
-import { dashboard, getUsage } from "@/lib/queries";
+import { formatDate, formatInr, formatSpeed, formatStamp } from "@/lib/format";
+import { dashboard, getUsage, listPendingUpiClaims } from "@/lib/queries";
 import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
-import { LineId, StatusPill } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
+import { Banner, LineId, StatusPill } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
 
@@ -15,9 +17,15 @@ function greeting() {
   return "Good evening";
 }
 
-export default async function AdminHome() {
+export default async function AdminHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; notice?: string }>;
+}) {
   const session = await requireRole("admin");
+  const query = await searchParams;
   syncDeskOverflow(session.providerId);
+  const claims = listPendingUpiClaims(session.providerId);
   const stats = dashboard(session.providerId);
   const usage = getUsage(session.providerId);
   const unbilled = carriedOverflow(session.providerId);
@@ -36,7 +44,66 @@ export default async function AdminHome() {
           Add subscriber
         </Link>
       </header>
-      <article className="card usage-card" style={{ marginBottom: 16 }}>
+      <Banner error={query.error} notice={query.notice} />
+      {claims.length > 0 ? (
+        <article className="card">
+          <h2>UPI awaiting confirmation</h2>
+          <p className="fine">
+            These subscribers paid your UPI ID and sent the reference. Check that the amount reached your bank or UPI app, then confirm. Confirming moves the
+            renewal and issues the receipt. Reject leaves the renewal unchanged.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Subscriber</th>
+                  <th className="num">Amount</th>
+                  <th>UPI reference</th>
+                  <th>Sent</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {claims.map((claim) => (
+                  <tr key={claim.id}>
+                    <td>
+                      <Link className="rowlink" href={`/provider/subscriber/${claim.customer_id}`}>
+                        {claim.customer_name}
+                      </Link>
+                      <div>
+                        <LineId id={claim.customer_id} />
+                      </div>
+                    </td>
+                    <td className="num">{formatInr(claim.amount)}</td>
+                    <td>
+                      {claim.utr}
+                      {claim.promo_name ? <div className="fine">Promo {claim.promo_name}</div> : null}
+                    </td>
+                    <td>{formatStamp(claim.created_at)}</td>
+                    <td>
+                      <div className="claim-actions">
+                        <form action={confirmUpiPayment}>
+                          <input type="hidden" name="claim_id" value={claim.id} />
+                          <SubmitButton className="btn small primary" pendingLabel="Confirming…">
+                            Confirm
+                          </SubmitButton>
+                        </form>
+                        <form action={rejectUpiPayment}>
+                          <input type="hidden" name="claim_id" value={claim.id} />
+                          <SubmitButton className="btn small" pendingLabel="Rejecting…">
+                            Reject
+                          </SubmitButton>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      ) : null}
+      <article className="card usage-card">
         <div className="usage-copy">
           <strong>
             {usage.customers} of {limitLabel(usage.customerCap)} customers
@@ -44,7 +111,7 @@ export default async function AdminHome() {
           <div className="meter" aria-hidden="true">
             <span style={{ width: `${width}%` }} />
           </div>
-          <p className="fine" style={{ marginTop: 8 }}>
+          <p className="fine">
             {usage.trial.ended
               ? `The trial ended on ${formatDate(usage.trial.ends)}. Adding subscribers is paused. Existing lines can still be billed. `
               : usage.overflowSlots === 0
@@ -89,7 +156,7 @@ export default async function AdminHome() {
       <section className="split">
         <article className="card">
           <h2>Renewals</h2>
-          <p className="fine" style={{ marginBottom: 8 }}>
+          <p className="fine">
             Overdue, and anything due in the next 14 days.
           </p>
           {stats.renewals.length === 0 ? (
@@ -100,7 +167,7 @@ export default async function AdminHome() {
                 <thead>
                   <tr>
                     <th>Subscriber</th>
-                    <th>Internet Plan</th>
+                    <th>Internet plan</th>
                     <th>Renewal</th>
                     <th>Status</th>
                   </tr>

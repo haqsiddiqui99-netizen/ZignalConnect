@@ -155,7 +155,7 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
           <div key={row.key} className="bill-row">
             <label className="field">
               <span>
-                Internet Plan <i className="req" aria-hidden="true">*</i>
+                Internet plan <i className="req" aria-hidden="true">*</i>
               </span>
               <select
                 name="plan_id"
@@ -368,7 +368,7 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
               onChange={(event) => updateDiscount(row.key, { frequency: event.target.value === "once" ? "once" : "recurring" })}
             >
               <option value="once">One time</option>
-              <option value="recurring">Always with Internet Plan (Recurring)</option>
+              <option value="recurring">Always with the internet plan</option>
             </select>
           </label>
           <label className="field">
@@ -401,7 +401,7 @@ export function ChargeFields({ plans, charges = [], offers = [] }: { plans: Cata
       <strong>Add more charges</strong>
       <div className="addon-row">
         <button type="button" className="btn small" onClick={addPlan}>
-          Add Internet Plan
+          Add internet plan
         </button>
         <button type="button" className="btn small" onClick={addCharge}>
           Add Charge

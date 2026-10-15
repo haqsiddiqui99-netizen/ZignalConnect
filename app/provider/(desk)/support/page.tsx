@@ -70,7 +70,7 @@ export default async function SupportPage({
             <span>What you need</span>
             <textarea name="message" required minLength={8} maxLength={800} rows={4} placeholder="Billing question, a bug, or help with a subscriber." />
           </label>
-          <SubmitButton className="btn" pendingLabel="Sending…">
+          <SubmitButton pendingLabel="Sending…">
             Send to Zignal
           </SubmitButton>
         </form>
@@ -103,7 +103,7 @@ export default async function SupportPage({
           ) : null}
         </article>
       </section>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Your messages</h2>
         {tickets.length === 0 ? (
           <p>None yet.</p>

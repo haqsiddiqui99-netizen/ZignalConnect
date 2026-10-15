@@ -160,6 +160,7 @@ export type ProviderRecord = {
   name: string;
   product_plan: ProductPlan;
   support_phone: string;
+  otp_via: string;
   logo_letter: string;
   created_at: string;
   subscriber_base: number;
@@ -191,6 +192,14 @@ export type ProviderRecord = {
   quit_reason: string;
   closed_at: string;
   promise_on: string;
+  collect_upi: string;
+  collect_payee: string;
+  bank_holder: string;
+  bank_account: string;
+  bank_ifsc: string;
+  bank_pan: string;
+  bank_status: string;
+  bank_changed_at: string;
 };
 
 const subscriberSelect = `
@@ -1087,4 +1096,62 @@ export function listSupportFollowups(requestIds: number[]) {
      ORDER BY f.id`,
     ...requestIds,
   );
+}
+
+export type UpiClaim = {
+  id: number;
+  provider_id: number;
+  customer_id: number;
+  customer_name: string;
+  amount: number;
+  utr: string;
+  line_items: string;
+  promo_name: string;
+  renew_date: string;
+  status: "pending" | "confirmed" | "rejected";
+  created_at: string;
+  decided_at: string;
+  decided_by: string;
+  payment_id: number;
+};
+
+const upiClaimSelect = `
+  SELECT k.id, k.provider_id, k.customer_id, u.name AS customer_name, k.amount, k.utr, k.line_items, k.promo_name,
+         k.renew_date, k.status, k.created_at, k.decided_at, k.decided_by, k.payment_id
+  FROM upi_claims k
+  JOIN customers c ON c.id = k.customer_id
+  JOIN users u ON u.id = c.user_id
+`;
+
+export function listPendingUpiClaims(providerId: number) {
+  return many<UpiClaim>(`${upiClaimSelect} WHERE k.provider_id = ? AND k.status = 'pending' ORDER BY k.id`, providerId);
+}
+
+export function getUpiClaim(id: number, providerId: number) {
+  return one<UpiClaim>(`${upiClaimSelect} WHERE k.id = ? AND k.provider_id = ?`, id, providerId);
+}
+
+export function latestUpiClaim(customerId: number) {
+  return one<UpiClaim>(`${upiClaimSelect} WHERE k.customer_id = ? ORDER BY k.id DESC LIMIT 1`, customerId);
+}
+
+export function maskAccount(account: string) {
+  return account ? `XXXX ${account.slice(-4)}` : "";
+}
+
+export type CollectOptions = { upi: boolean; gateway: boolean; bankSaved: boolean };
+
+export function collectOptions(provider: Pick<ProviderRecord, "collect_upi" | "bank_account" | "bank_status"> | undefined): CollectOptions {
+  return {
+    upi: Boolean(provider?.collect_upi),
+    gateway: provider?.bank_status === "active",
+    bankSaved: Boolean(provider?.bank_account),
+  };
+}
+
+export function collectLine(provider: Pick<ProviderRecord, "collect_upi" | "bank_account" | "bank_status"> | undefined) {
+  const ways = collectOptions(provider);
+  if (ways.gateway) return "Credit card, debit card, net banking, UPI, and cash";
+  if (ways.upi) return ways.bankSaved ? "UPI and cash. Cards and net banking wait for the payment gateway." : "UPI and cash";
+  return ways.bankSaved ? "Cash only. Cards and net banking wait for the payment gateway." : "Cash only";
 }

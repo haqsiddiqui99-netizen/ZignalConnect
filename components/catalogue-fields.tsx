@@ -64,7 +64,7 @@ export function DiscountAppliesFields({
           onChange={(event) => setTiming(event.target.value)}
         >
           <option value="once">One time</option>
-          <option value="recurring">Always with Internet Plan</option>
+          <option value="recurring">Always with the internet plan</option>
         </select>
       </label>
     </>

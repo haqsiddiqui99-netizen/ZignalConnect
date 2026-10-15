@@ -165,12 +165,12 @@ export default async function PortalHome({
             </dd>
             <dt>Installed</dt>
             <dd>{formatDate(person.installation_date)}</dd>
-            <dt>Internet Plan</dt>
+            <dt>Internet plan</dt>
             <dd>{person.plan_description}</dd>
           </dl>
         </article>
       </section>
-      <section className="split" style={{ marginTop: 14 }}>
+      <section className="split">
         <article className="card">
           <h2>Recent receipts</h2>
           {payments.length === 0 ? (

@@ -82,8 +82,24 @@ export function SignupForm() {
         </label>
         <label className="field">
           <span>Support mobile</span>
-          <input name="support_phone" inputMode="numeric" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <input name="support_phone" inputMode="numeric" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="10-digit mobile" />
         </label>
+        <div className="field">
+          <span>
+            Sign-in code <i className="req" aria-hidden="true">*</i>
+          </span>
+          <div className="otp-choice">
+            <label>
+              <input type="radio" name="otp_via" value="email" defaultChecked />
+              Email
+            </label>
+            <label>
+              <input type="radio" name="otp_via" value="whatsapp" />
+              WhatsApp
+            </label>
+          </div>
+          <p className="fine">After the password, a 6-digit code is sent this way. WhatsApp uses the support mobile.</p>
+        </div>
         <label className="field">
           <span>GSTIN (optional)</span>
           <input name="gstin" autoCapitalize="characters" value={gstin} onChange={(event) => setGstin(event.target.value)} />

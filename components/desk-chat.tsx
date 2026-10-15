@@ -47,7 +47,7 @@ function answersFor(catalogue: {
     },
     {
       question: "Import a spreadsheet",
-      text: "Open Import Subscribers and download the template. The same email ties the Account, Internet plan, charge, and discount rows together. Upload it again to update a subscriber who is already on the desk.",
+      text: "Open Import subscribers and download the template. The same email ties the Account, Internet plan, charge, and discount rows together. Upload it again to update a subscriber who is already on the desk.",
       href: "/provider/import",
       label: "Open import",
     },

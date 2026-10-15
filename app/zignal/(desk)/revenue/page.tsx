@@ -91,9 +91,9 @@ export default async function OperatorRevenue({
           <b>{formatInr(revenue.expected)}</b>
         </article>
       </section>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Revenue by plan</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           How many providers sit on each plan, and the monthly fee those desks book. A quarterly or yearly desk is booked at its discounted monthly rate. This is the plan price, not money
           collected from a card.
         </p>
@@ -126,13 +126,13 @@ export default async function OperatorRevenue({
           </table>
         </div>
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Fees by month</h2>
         <RevenueChart points={revenue.series} />
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Receipts from providers</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           What each ISP pays Zignal for the desk. Add the GSTIN under Settings so tax is shown on new receipts.
         </p>
         <DeskFeeTable
@@ -142,9 +142,9 @@ export default async function OperatorRevenue({
           empty="No desk fee has been issued yet."
         />
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Subscriber payments</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           {payments.length} payments · {formatInr(total)}
           {range.from ? ` from ${range.from} to ${addDays(range.to ?? todayISO(), -1)}.` : " on every provider desk."}
         </p>
@@ -186,7 +186,7 @@ export default async function OperatorRevenue({
             Clear
           </FilterLink>
         </FilterForm>
-        <p className="fine" style={{ margin: "-6px 0 14px" }}>
+        <p className="fine">
           Pick a year, or a year and month. A from and to date overrides the year. Month needs a year.
         </p>
         {payments.length === 0 ? (

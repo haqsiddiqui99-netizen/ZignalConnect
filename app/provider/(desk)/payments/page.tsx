@@ -43,7 +43,7 @@ export default async function ImportPaymentsPage({
             </label>
             <SubmitButton pendingLabel="Importing…">Import payments</SubmitButton>
           </form>
-          <div className="stack" style={{ marginTop: 16 }}>
+          <div className="stack after-form">
             <strong>Use the Payments tab.</strong>
             <ol className="fine info-list">
               <li>Email finds the subscriber. When mobile or name is filled in, it has to match that subscriber. A blank email can match on mobile alone.</li>

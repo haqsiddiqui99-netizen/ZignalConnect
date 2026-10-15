@@ -120,7 +120,7 @@ export default async function PaymentsPage({
           Clear
         </FilterLink>
       </FilterForm>
-      <p className="fine" style={{ margin: "-6px 0 14px" }}>
+      <p className="fine">
         Pick a year, or a year and month. A from and to date overrides the year. Month needs a year.
       </p>
       {revenue ? (
@@ -139,19 +139,19 @@ export default async function PaymentsPage({
               <b>{formatInr(revenue.expected)}</b>
             </article>
           </section>
-          <article className="card" style={{ marginBottom: 16 }}>
+          <article className="card">
             <h2>Collections</h2>
             <RevenueChart points={revenue.series} />
           </article>
         </>
       ) : (
-        <p className="fine" style={{ marginBottom: 16 }}>
+        <p className="fine">
           Revenue totals are for the owner. Receipts for each subscriber stay in the list below.
         </p>
       )}
       <article className="card">
         <h2>Subscriber receipts</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           What subscribers paid this desk. Each row can be downloaded.
         </p>
         {payments.length === 0 ? (
@@ -199,9 +199,9 @@ export default async function PaymentsPage({
           </div>
         )}
       </article>
-      <article className="card" style={{ marginTop: 14 }}>
+      <article className="card">
         <h2>Paid to Zignal</h2>
-        <p className="fine" style={{ margin: "8px 0 16px" }}>
+        <p className="fine">
           The monthly desk fee for this ISP. GST is added when Zignal has a GSTIN. Recording a payment does not charge a
           card.
         </p>

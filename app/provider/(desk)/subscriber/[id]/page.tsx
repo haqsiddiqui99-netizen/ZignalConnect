@@ -15,10 +15,10 @@ import { getSubscriber, listChargeCatalogue, listCustomerCharges, listCustomerDi
 const TABS = [
   { id: "account", label: "Account" },
   { id: "invoice", label: "Invoice" },
-  { id: "plans", label: "Active Plans" },
+  { id: "plans", label: "Active plans" },
   { id: "payment", label: "Payment" },
   { id: "reminders", label: "Reminders" },
-  { id: "password", label: "Password Reset" },
+  { id: "password", label: "Password reset" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -65,15 +65,15 @@ export default async function CustomerDetailPage({
 
   return (
     <>
-      <p>
-        <Link className="back" href="/provider/subscriber">
-          All subscribers
-        </Link>
-      </p>
       <header className="page-head">
         <div>
-          <p className="eyebrow-ink">{connectionId(person.id)}</p>
-          <h1>{person.name}</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/subscriber">
+              ← All subscribers
+            </Link>
+            <h1>{person.name}</h1>
+          </div>
+          <p>{connectionId(person.id)}</p>
         </div>
         <StatusPill status={person.status} renewDate={person.renew_date} />
       </header>
@@ -97,10 +97,10 @@ export default async function CustomerDetailPage({
       {tab === "invoice" ? (
         <nav className="invoice-switch" aria-label="Invoices">
           <Link href={`/provider/subscriber/${person.id}?tab=invoice&view=open`} className={invoiceView === "open" ? "active" : undefined}>
-            Open Invoice
+            Open invoice
           </Link>
           <Link href={`/provider/subscriber/${person.id}?tab=invoice&view=closed`} className={invoiceView === "closed" ? "active" : undefined}>
-            Closed Invoice
+            Closed invoice
           </Link>
         </nav>
       ) : null}

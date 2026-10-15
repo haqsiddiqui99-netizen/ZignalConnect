@@ -32,14 +32,14 @@ export default async function UpgradePaymentPage({
 
   return (
     <>
-      <p>
-        <Link className="back" href="/provider/upgrade">
-          Desk plan
-        </Link>
-      </p>
-      <header className="page-head pay-page-head">
+      <header className="page-head">
         <div>
-          <h1>Pay for {order.plan_label}</h1>
+          <div className="head-line">
+            <Link className="btn small" href="/provider/upgrade">
+              ← Upgrade
+            </Link>
+            <h1>Pay for {order.plan_label}</h1>
+          </div>
           <p>
             {planFamily(order.product_plan) === "premium"
               ? `Premium for a book of ${limitLabel(order.subscriber_base)}, held up to ${limitLabel(plan.customers)} subscribers.`
