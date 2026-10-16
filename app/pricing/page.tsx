@@ -62,7 +62,7 @@ export default function PricingPage() {
         <p className="site-eyebrow">Pricing</p>
         <h1>Pay for the size of your subscriber book.</h1>
         <p className="site-lede">
-          Monthly is the list price. Quarterly saves {quarterly}%, and yearly saves {yearly}% (two months free). Every
+          Monthly is the list price. Quarterly saves {quarterly}%, and yearly saves {yearly}%. GST is added on top of each fee. Every
           plan starts with a 30-day trial.
         </p>
       </section>
@@ -83,7 +83,7 @@ export default function PricingPage() {
                 {card.family === "premium" ? <span className="fine">from </span> : null}
                 {formatInr(card.price)}
               </p>
-              <p className="fine">a month, billed monthly</p>
+              <p className="fine">a month, billed monthly + GST applicable</p>
             </div>
             <ul className="plan-stats">
               <li>
@@ -142,7 +142,7 @@ export default function PricingPage() {
           </table>
         </div>
         <p className="fine" style={{ marginTop: 10 }}>
-          A book above {limitLabel(CATALOG.premium_30000.customers)} subscribers is a custom offer.
+          A book above {limitLabel(CATALOG.premium_30000.customers)} subscribers is a custom offer. GST is added on top of these fees.
         </p>
       </section>
       <SiteCta />

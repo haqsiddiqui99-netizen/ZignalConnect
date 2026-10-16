@@ -54,7 +54,10 @@ export default async function UpgradeCheckoutPage({
           <span className="pay-kicker">Amount due</span>
           <p className="pay-amount">{formatInr(payable)}</p>
           <p className="pay-sub">
-            {order.plan_label} · up to {limitLabel(plan.customers)} subscribers
+            {formatInr(order.plan_amount)} plan
+            {order.tax > 0 ? ` · GST ${formatInr(order.tax)} on top` : " · + GST applicable"}
+            {" · "}
+            up to {limitLabel(plan.customers)} subscribers
           </p>
           {order.promo_off ? (
             <div className="pay-chip">

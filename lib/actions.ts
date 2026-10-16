@@ -49,7 +49,7 @@ import {
   renewalAfterInstallation,
   type BillCycle,
 } from "@/lib/bill-cycle";
-import { cleanGstin, gstIncluded, gstMode, isGstin, isIndianState } from "@/lib/tax";
+import { cleanGstin, gstAdded, gstMode, isGstin, isIndianState } from "@/lib/tax";
 import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
 import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
 import { syncDeskOverflow } from "@/lib/receipts";
@@ -1796,7 +1796,9 @@ export async function registerProvider(
   await setSession(userId);
   const chosen = CATALOG[plan];
   const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
-  const fee = formatInr(termQuote(chosen.price, term).due);
+  const planFee = termQuote(chosen.price, term).due;
+  const added = getPlatformProfile().gstin ? gstAdded(planFee) : null;
+  const fee = added ? `${formatInr(planFee)} + GST ${formatInr(added.tax)}` : formatInr(planFee);
   const welcomeTitle = "Welcome to Zignal Connect";
   const welcomeBody = `Your desk for ${isp} is open on ${chosen.label} ${termLabel.toLowerCase()}. The trial runs until ${formatDate(trialEnds)}. The first desk fee of ${fee} is booked for that day. No card is charged during the trial. Sign in with ${email} and the password you chose.`;
   try {
@@ -2977,7 +2979,7 @@ export async function openUpgradeCheckout(formData: FormData) {
   const platform = getPlatformProfile();
   const quote = termQuote(CATALOG[nextPlan].price, term);
   const amount = quote.due;
-  const taxed = platform.gstin ? gstIncluded(amount) : { tax: 0, total: amount };
+  const taxed = platform.gstin ? gstAdded(amount) : { tax: 0, total: amount };
   const mode = platform.gstin ? gstMode(platform.state, provider?.state ?? "") : "none";
   const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
   const label = `${requested === "premium" ? "Premium" : CATALOG[nextPlan].label} · ${termLabel}`;
@@ -3020,8 +3022,17 @@ export async function applyUpgradePromo(formData: FormData) {
     );
     if (used) go(`/provider/upgrade/pay/${id}/checkout`, { error: "This promo code has already been used on this desk." });
   }
-  const off = promoOff(order.total, coupon.mode, coupon.value);
-  run("UPDATE upgrade_orders SET promo_code = ?, promo_off = ? WHERE id = ?", coupon.code, off, order.id);
+  const off = promoOff(order.plan_amount, coupon.mode, coupon.value);
+  const net = Math.max(0, order.plan_amount - off);
+  const added = getPlatformProfile().gstin ? gstAdded(net) : { tax: 0, total: net };
+  run(
+    "UPDATE upgrade_orders SET promo_code = ?, promo_off = ?, tax = ?, total = ? WHERE id = ?",
+    coupon.code,
+    off,
+    added.tax,
+    net + added.tax + off,
+    order.id,
+  );
   refresh();
   go(`/provider/upgrade/pay/${id}/checkout`, { notice: `Promo ${coupon.code} takes ${formatInr(off)} off this payment.` });
 }
@@ -3031,7 +3042,13 @@ export async function clearUpgradePromo(formData: FormData) {
   const id = Number(readText(formData, "order_id"));
   const order = one<UpgradeOrder>("SELECT * FROM upgrade_orders WHERE id = ?", id);
   if (!order || order.provider_id !== session.providerId || !session.isOwner) go("/provider/upgrade", { error: "That payment was not found." });
-  run("UPDATE upgrade_orders SET promo_code = '', promo_off = 0 WHERE id = ?", order.id);
+  const restored = getPlatformProfile().gstin ? gstAdded(order.plan_amount) : { tax: 0, total: order.plan_amount };
+  run(
+    "UPDATE upgrade_orders SET promo_code = '', promo_off = 0, tax = ?, total = ? WHERE id = ?",
+    restored.tax,
+    restored.total,
+    order.id,
+  );
   refresh();
   redirect(`/provider/upgrade/pay/${id}/checkout`);
 }

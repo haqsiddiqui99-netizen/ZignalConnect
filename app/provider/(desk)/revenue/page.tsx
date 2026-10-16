@@ -202,7 +202,7 @@ export default async function PaymentsPage({
       <article className="card">
         <h2>Paid to Zignal</h2>
         <p className="fine">
-          The monthly desk fee for this ISP. GST is added when Zignal has a GSTIN. Recording a payment does not charge a
+          The monthly desk fee for this ISP. GST is added on top of that fee when Zignal has a GSTIN. Recording a payment does not charge a
           card.
         </p>
         <DeskFeeTable

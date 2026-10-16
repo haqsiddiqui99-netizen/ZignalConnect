@@ -74,15 +74,15 @@ export default async function LoginPage({
           <div className="login-stats">
             <div>
               <b>{formatInr(CATALOG.pro.price)}</b>
-              <span>Pro · 500 · {CATALOG.pro.trialDays}-day trial</span>
+              <span>Pro · 500 · {CATALOG.pro.trialDays}-day trial · + GST applicable</span>
             </div>
             <div>
               <b>{formatInr(CATALOG.ultra.price)}</b>
-              <span>Ultra · 1,000 · {CATALOG.ultra.trialDays}-day trial</span>
+              <span>Ultra · 1,000 · {CATALOG.ultra.trialDays}-day trial · + GST applicable</span>
             </div>
             <div>
               <b>from {formatInr(CATALOG.premium_3000.price)}</b>
-              <span>Premium · 3,000 to 30,000 · {CATALOG.premium_3000.trialDays}-day trial</span>
+              <span>Premium · 3,000 to 30,000 · {CATALOG.premium_3000.trialDays}-day trial · + GST applicable</span>
             </div>
           </div>
           <ul className="login-trust">

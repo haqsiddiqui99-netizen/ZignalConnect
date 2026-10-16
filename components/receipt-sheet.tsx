@@ -68,8 +68,11 @@ function withGst(doc: ReceiptDoc): ReceiptDoc {
   const goods = doc.lines.filter((line) => !taxLine.test(line.description));
   const recorded = doc.cgst + doc.sgst + doc.igst;
   if (recorded > 0) {
+    const base = goods.length ? goods : doc.lines;
+    const goodsSum = base.reduce((sum, line) => sum + line.amount, 0);
+    if (Math.abs(goodsSum + recorded - doc.total) <= 1) return { ...doc, lines: base };
     const cgst = gstIncluded(doc.total).cgst;
-    return { ...doc, lines: goods.length ? goods : doc.lines, taxable: gstIncluded(doc.total).taxable, cgst, sgst: cgst, igst: 0, gstMode: "cgst" };
+    return { ...doc, lines: base, taxable: gstIncluded(doc.total).taxable, cgst, sgst: cgst, igst: 0, gstMode: "cgst" };
   }
   const base = goods.length ? goods : doc.lines;
   const goodsSum = base.reduce((sum, line) => sum + line.amount, 0);

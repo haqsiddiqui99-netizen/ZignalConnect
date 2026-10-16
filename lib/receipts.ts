@@ -2,7 +2,7 @@ import { many, one, run } from "@/lib/db";
 import { CATALOG, isProductPlan } from "@/lib/entitlements";
 import { formatDate, formatStamp, nowStamp, todayISO } from "@/lib/format";
 import { getPlatformProfile, getProvider, getUsage, trialStatus } from "@/lib/queries";
-import { gstIncluded, gstMode } from "@/lib/tax";
+import { gstAdded, gstIncluded, gstMode } from "@/lib/tax";
 import type { ReceiptDoc } from "@/components/receipt-sheet";
 
 export type DeskCharge = {
@@ -261,7 +261,11 @@ function buildDesk(row: DeskRow): ReceiptDoc {
   if (row.staff_overage_amount > 0) {
     lines.push({ description: `Staff overflow for ${month}`, sac: "998315", amount: row.staff_overage_amount });
   }
-  const included = gstIncluded(row.total);
+  const goods = lines.reduce((sum, line) => sum + line.amount, 0);
+  const onTop = row.gst_mode !== "none" && row.tax > 0 && row.total > goods;
+  const included = onTop
+    ? { taxable: row.taxable || goods, tax: row.tax, cgst: Math.floor(row.tax / 2), sgst: row.tax - Math.floor(row.tax / 2) }
+    : gstIncluded(row.total);
   const cgst = row.gst_mode === "cgst" ? included.cgst : 0;
   return {
     title: paid ? "Payment receipt" : "Tax invoice",
@@ -344,7 +348,7 @@ function writeOpenDeskCharge(
   const priorPeriod = existing?.prior_period ? existing.prior_period : (brought?.period ?? "");
   const gross = catalog.price + currentOverage + priorOverage + currentStaff + priorStaff;
   const seller = getPlatformProfile();
-  const charged = seller.gstin ? gstIncluded(gross) : { taxable: gross, tax: 0, total: gross };
+  const charged = seller.gstin ? gstAdded(gross) : { taxable: gross, tax: 0, total: gross };
   const mode = seller.gstin ? gstMode(seller.state, provider.state) : "none";
   const values = [
     catalog.label,

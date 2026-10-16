@@ -73,7 +73,7 @@ export default async function OperatorSettings({
         <h2>Receipt details</h2>
         <p className="fine">
           These details are printed on the receipt a provider downloads after paying Zignal. Leave GSTIN blank until the
-          business is registered. Tax is then added at 18% on new desk fees.
+          business is registered. GST is then added on top of new desk fees at 18%.
         </p>
         <form action={savePlatformProfile} className="stack">
           <label className="field">

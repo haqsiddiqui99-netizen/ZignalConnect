@@ -113,7 +113,7 @@ export default async function OperatorHome() {
         <p className="fine">
           {desk.plans.map((item) => `${item.label} ${item.providers}`).join(" · ")}. Fees are {formatInr(CATALOG.pro.price)}{" "}
           Pro, {formatInr(CATALOG.ultra.price)} Ultra, and {formatInr(CATALOG.premium_3000.price)} to{" "}
-          {formatInr(CATALOG.premium_30000.price)} across the Premium tiers.
+          {formatInr(CATALOG.premium_30000.price)} across the Premium tiers. GST is added on top.
         </p>
       </article>
       <article className="card">

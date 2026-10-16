@@ -25,7 +25,7 @@ export default async function PremiumQuotePage({ searchParams }: { searchParams:
             </Link>
             <h1>Premium</h1>
           </div>
-          <p>The rate is set from the subscriber base. Quarterly is 10% off. Yearly drops two months.</p>
+          <p>The rate is set from the subscriber base. Quarterly is 10% off. Yearly is 15% off. GST is added on top.</p>
         </div>
       </header>
       <article className="card quote-card">

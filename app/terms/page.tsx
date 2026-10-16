@@ -30,8 +30,8 @@ export default function TermsPage() {
         <h2>Plans</h2>
         <p>
           Pro holds up to 500 subscribers, Ultra up to 1,000, and Premium from 3,000 to 30,000. Every plan starts with
-          a 30-day trial. Monthly is the list price. Quarterly is 10% off, and yearly drops two months. The prices on
-          the <Link href="/pricing">Pricing</Link> page are the prices that apply.
+          a 30-day trial. Monthly is the list price. Quarterly is 10% off, and yearly is 15% off. GST is added
+          on top of that fee. The prices on the <Link href="/pricing">Pricing</Link> page are the plan fees.
         </p>
         <h2>Payments</h2>
         <p>

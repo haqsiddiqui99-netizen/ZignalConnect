@@ -13,7 +13,7 @@ import { savedPaymentLine } from "@/lib/pay-instrument";
 import { promiseWindow, settleExpiredDeskPromises } from "@/lib/promise-pay";
 import { nextDeskFeeDate } from "@/lib/renewals";
 import { ensureDeskCharge } from "@/lib/receipts";
-import { gstIncluded, gstMode } from "@/lib/tax";
+import { gstAdded, gstIncluded, gstMode } from "@/lib/tax";
 import {
   collectLine,
   getProvider,
@@ -30,7 +30,12 @@ import {
 function DeskBill({ bill }: { bill: ProviderDeskBill }) {
   const lines = billLines(bill);
   const gross = lines.reduce((sum, line) => sum + line.amount, 0);
-  const charged = Math.abs((bill.total || gross) - gross) < 0.01 ? gstIncluded(bill.total || gross) : gstIncluded(gross);
+  const onTop = bill.gst_mode !== "none" && bill.tax > 0 && (bill.total || 0) > gross;
+  const charged = onTop
+    ? { taxable: bill.taxable || gross, tax: bill.tax, cgst: Math.floor(bill.tax / 2), sgst: bill.tax - Math.floor(bill.tax / 2), total: bill.total }
+    : Math.abs((bill.total || gross) - gross) < 0.01
+      ? gstIncluded(bill.total || gross)
+      : gstIncluded(gross);
   const cgst = charged.cgst;
   const sgst = charged.sgst;
   return (
@@ -87,8 +92,18 @@ function DeskBill({ bill }: { bill: ProviderDeskBill }) {
   );
 }
 
-function BookedDeskInvoice({ label, amount, mode }: { label: string; amount: number; mode: "cgst" | "igst" }) {
-  const charged = gstIncluded(amount);
+function BookedDeskInvoice({
+  label,
+  amount,
+  mode,
+  registered,
+}: {
+  label: string;
+  amount: number;
+  mode: "cgst" | "igst";
+  registered: boolean;
+}) {
+  const charged = registered ? gstAdded(amount) : { taxable: amount, tax: 0, cgst: 0, sgst: 0, igst: 0, total: amount };
   return (
     <div className="table-wrap">
       <table>
@@ -107,25 +122,32 @@ function BookedDeskInvoice({ label, amount, mode }: { label: string; amount: num
       </table>
       <div className="invoice-totals">
         <div>
-          <span>Sub total</span>
+          <span>Plan fee</span>
           <span>{formatInr(charged.taxable, 2)}</span>
         </div>
-        {mode === "igst" ? (
-          <div>
-            <span>IGST 18%</span>
-            <span>{formatInr(charged.igst, 2)}</span>
-          </div>
+        {registered ? (
+          mode === "igst" ? (
+            <div>
+              <span>IGST 18%</span>
+              <span>{formatInr(charged.igst, 2)}</span>
+            </div>
+          ) : (
+            <>
+              <div>
+                <span>CGST 9%</span>
+                <span>{formatInr(charged.cgst, 2)}</span>
+              </div>
+              <div>
+                <span>SGST 9%</span>
+                <span>{formatInr(charged.sgst, 2)}</span>
+              </div>
+            </>
+          )
         ) : (
-          <>
-            <div>
-              <span>CGST 9%</span>
-              <span>{formatInr(charged.cgst, 2)}</span>
-            </div>
-            <div>
-              <span>SGST 9%</span>
-              <span>{formatInr(charged.sgst, 2)}</span>
-            </div>
-          </>
+          <div>
+            <span>GST</span>
+            <span>+ GST applicable</span>
+          </div>
         )}
         <div>
           <span>Grand total</span>
@@ -294,8 +316,8 @@ export default async function ProviderDeskPage({
           </p>
           {openBills.length === 0 ? (
             <>
-              <p>Nothing is waiting on an issued invoice. This is the booked desk fee. Tax is inside that fee.</p>
-              <BookedDeskInvoice label={`${CATALOG[planId].label} desk`} amount={booked} mode={bookedTax} />
+              <p>Nothing is waiting on an issued invoice. This is the booked desk fee. GST is added on top of that fee.</p>
+              <BookedDeskInvoice label={`${CATALOG[planId].label} desk`} amount={booked} mode={bookedTax} registered={Boolean(seller.gstin)} />
             </>
           ) : (
             openBills.map((bill) => <DeskBill key={bill.id} bill={bill} />)

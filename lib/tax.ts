@@ -116,6 +116,15 @@ export function gstOnTop(taxable: number) {
   return { taxable: paise(taxable), tax, cgst, sgst, igst: tax, total: paise(taxable + tax) };
 }
 
+/** 18% GST added on top of a Zignal desk fee. Amounts are whole rupees. */
+export function gstAdded(fee: number) {
+  const taxable = Math.max(0, Math.round(fee));
+  const tax = Math.round((taxable * 18) / 100);
+  const cgst = Math.floor(tax / 2);
+  const sgst = tax - cgst;
+  return { taxable, tax, cgst, sgst, igst: tax, total: taxable + tax };
+}
+
 export function priceAndTax(amount: number, included: boolean, percent: number, label: string) {
   const rate = percent > 0 ? percent : 18;
   const halfText = String(rate / 2);

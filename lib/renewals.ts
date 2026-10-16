@@ -5,7 +5,13 @@ import { BILL_TERMS, CATALOG, allows, isBillTerm, isProductPlan, termQuote, type
 import { addMonths, daysUntil, formatDate, formatInr, formatSpeed, isDate, nowStamp, todayISO } from "@/lib/format";
 import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
 import { settleExpiredDeskPromises, settleExpiredPromises } from "@/lib/promise-pay";
-import { deskMailSettings, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
+import { deskMailSettings, getPlatformProfile, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
+import { gstAdded } from "@/lib/tax";
+
+function deskFeeText(fee: number) {
+  const added = getPlatformProfile().gstin ? gstAdded(fee) : null;
+  return added ? `${formatInr(fee)} + GST ${formatInr(added.tax)}` : formatInr(fee);
+}
 
 type DueLine = {
   id: number;
@@ -178,7 +184,7 @@ export async function issueDeskFeeReminders(providerId: number) {
     name: owner.name,
     plan: `${CATALOG[plan].label} · ${termLabel}`,
     date: formatDate(dueOn),
-    amount: formatInr(quote.due),
+    amount: deskFeeText(quote.due),
     isp: provider.name,
   };
   const title = fillReminder(stage === "soon" ? settings.soonTitle : settings.dueTitle, fields).slice(0, 80);
@@ -216,7 +222,7 @@ export async function sendDeskNote(providerId: number, title: string, body: stri
     name: owner.name,
     plan: `${CATALOG[plan].label} · ${termLabel}`,
     date: dueOn ? formatDate(dueOn) : "",
-    amount: formatInr(termQuote(CATALOG[plan].price, term).due),
+    amount: deskFeeText(termQuote(CATALOG[plan].price, term).due),
     isp: provider.name,
   };
   const filledTitle = fillReminder(title, fields).slice(0, 80);

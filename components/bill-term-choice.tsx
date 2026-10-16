@@ -26,6 +26,7 @@ export function TermPrice({ monthly, term, from = false }: { monthly: number; te
       <p className="fine">
         {period}
         {quote.save > 0 ? ` · ${formatInr(quote.perMonth)} a month` : ""}
+        {" + GST applicable"}
       </p>
       {quote.save > 0 ? (
         <p className="plan-save">

@@ -22,7 +22,7 @@ export type BillTerm = "monthly" | "quarterly" | "yearly";
 export const BILL_TERMS: { id: BillTerm; label: string; months: number; note: string }[] = [
   { id: "monthly", label: "Monthly", months: 1, note: "Billed every month" },
   { id: "quarterly", label: "Quarterly", months: 3, note: "10% off" },
-  { id: "yearly", label: "Yearly", months: 12, note: "2 months free" },
+  { id: "yearly", label: "Yearly", months: 12, note: "15% off" },
 ];
 
 export const CATALOG: Record<
@@ -140,7 +140,7 @@ export function isBillTerm(value: string): value is BillTerm {
 export function termQuote(monthly: number, term: BillTerm) {
   const months = term === "yearly" ? 12 : term === "quarterly" ? 3 : 1;
   const full = monthly * months;
-  const due = term === "yearly" ? monthly * 10 : term === "quarterly" ? Math.round(monthly * 3 * 0.9) : monthly;
+  const due = term === "yearly" ? Math.round(monthly * 12 * 0.85) : term === "quarterly" ? Math.round(monthly * 3 * 0.9) : monthly;
   const save = full - due;
   return { months, full, due, save, perMonth: Math.round(due / months), percent: full > 0 ? Math.round((save / full) * 100) : 0 };
 }
