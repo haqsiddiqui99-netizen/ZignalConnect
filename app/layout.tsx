@@ -21,8 +21,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await getSession();
   const theme = session?.theme === "dark" ? "dark" : "light";
   return (
-    <html lang="en" data-theme={theme}>
-      <body>
+    <html lang="en" data-theme={theme} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         {children}
         <RichSelects />
       </body>
