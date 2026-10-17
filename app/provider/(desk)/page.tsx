@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { confirmUpiPayment, rejectUpiPayment } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
-import { limitLabel } from "@/lib/entitlements";
+import { limitLabel, planForBook } from "@/lib/entitlements";
 import { formatDate, formatInr, formatSpeed, formatStamp } from "@/lib/format";
 import { dashboard, getUsage, listPendingUpiClaims } from "@/lib/queries";
 import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
@@ -112,7 +112,15 @@ export default async function AdminHome({
             <span style={{ width: `${width}%` }} />
           </div>
           <p className="fine">
-            {usage.trial.ended
+            {usage.customers > usage.overflowCap
+              ? `${usage.catalog.label} holds ${limitLabel(usage.customerCap)} subscribers and will not cover this book of ${usage.customers}. Upgrade to ${planForBook(usage.customers)}. ${
+                  usage.trial.active
+                    ? `Trial until ${formatDate(usage.trial.ends)}, so every subscriber stays until then. `
+                    : usage.trial.ended
+                      ? `The trial ended on ${formatDate(usage.trial.ends)}. Adding subscribers stays paused until this desk is on a plan that covers the book. `
+                      : ""
+                }`
+              : usage.trial.ended
               ? `The trial ended on ${formatDate(usage.trial.ends)}. Adding subscribers is paused. Existing lines can still be billed. `
               : usage.overflowSlots === 0
                 ? `Past the 10% overflow (${limitLabel(usage.overflowCap)}). Upgrade to the next tier to add more. `
@@ -123,7 +131,9 @@ export default async function AdminHome({
                         : ""
                     }`
                   : `${limitLabel(usage.customerSlots)} customer slots left. A short overflow runs to ${limitLabel(usage.overflowCap)} at ₹3 each. `}
-            {usage.trial.active ? `Trial until ${formatDate(usage.trial.ends)}. The plan cap applies the whole time. ` : ""}
+            {usage.trial.active && usage.customers <= usage.overflowCap
+              ? `Trial until ${formatDate(usage.trial.ends)}. The first month can take the whole list. `
+              : ""}
             <Link href="/provider/import">Import</Link>
           </p>
         </div>

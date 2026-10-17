@@ -178,6 +178,11 @@ export function minimumPlan(base: number): ProductPlan {
   return PLAN_ORDER.find((plan) => base <= CATALOG[plan].customers) ?? "premium_30000";
 }
 
+export function planForBook(base: number) {
+  if (base > CATALOG.premium_30000.customers) return "a custom plan";
+  return CATALOG[minimumPlan(base)].label;
+}
+
 export const PREMIUM_PLANS = PLAN_ORDER.filter((plan) => planFamily(plan) === "premium");
 
 export function quotePremium(base: number):

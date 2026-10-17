@@ -200,6 +200,8 @@ export type ProviderRecord = {
   bank_pan: string;
   bank_status: string;
   bank_changed_at: string;
+  agent_name: string;
+  agent_rate: number;
 };
 
 const subscriberSelect = `
@@ -282,6 +284,32 @@ export function listCustomerExtraPlans(customerId: number) {
 
 export function getProvider(providerId: number) {
   return one<ProviderRecord>("SELECT * FROM providers WHERE id = ?", providerId);
+}
+
+export type AgentCommissionRow = {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  agent_name: string;
+  product_plan: string;
+  billing_term: string;
+  plan_fee: number;
+  commission: number;
+  cycle_key: string;
+  created_at: string;
+  paid_at: string;
+};
+
+export function listAgentCommissions(providerId?: number) {
+  return many<AgentCommissionRow>(
+    `SELECT c.id, c.provider_id, p.name AS provider_name, c.agent_name, c.product_plan, c.billing_term,
+            c.plan_fee, c.commission, c.cycle_key, c.created_at, c.paid_at
+     FROM agent_commissions c
+     JOIN providers p ON p.id = c.provider_id
+     ${providerId ? "WHERE c.provider_id = ?" : ""}
+     ORDER BY c.paid_at = '' DESC, c.created_at DESC, c.id DESC`,
+    ...(providerId ? [providerId] : []),
+  );
 }
 
 export function providerDeskFacts(providerId: number) {

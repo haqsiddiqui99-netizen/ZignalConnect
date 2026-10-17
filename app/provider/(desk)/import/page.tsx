@@ -3,7 +3,8 @@ import { importCustomers } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { limitLabel } from "@/lib/entitlements";
+import { limitLabel, planForBook } from "@/lib/entitlements";
+import { formatDate } from "@/lib/format";
 import { getImportReport, getUsage, listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
 
 export const metadata = { title: "Import" };
@@ -32,9 +33,17 @@ export default async function ImportPage({
             <h1>Import subscribers</h1>
           </div>
           <p>
-            {usage.customers} of {limitLabel(usage.customerCap)} used on {usage.catalog.label}. Overflow allows{" "}
-            {limitLabel(usage.overflowCap)}. {usage.overflowSlots} can be added from this file.
+            {usage.trial.active
+              ? `The first month is free, so this file can bring in the whole list. ${usage.catalog.label} holds ${limitLabel(usage.customerCap)}.`
+              : `${usage.customers} of ${limitLabel(usage.customerCap)} used on ${usage.catalog.label}. Overflow allows ${limitLabel(usage.overflowCap)}. ${usage.overflowSlots} can be added from this file.`}
           </p>
+          {usage.trial.active && usage.customers > usage.overflowCap ? (
+            <p className="fine">
+              This book has {usage.customers} subscribers, so {usage.catalog.label} will not cover it. Upgrade to{" "}
+              {planForBook(usage.customers)} before {formatDate(usage.trial.ends)}.{" "}
+              <Link href="/provider/upgrade">Upgrade</Link>
+            </p>
+          ) : null}
         </div>
         <a className="btn" href="/provider/import/template">
           Download template

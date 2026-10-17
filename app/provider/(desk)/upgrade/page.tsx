@@ -3,7 +3,7 @@ import { DeskPlanCards } from "@/components/desk-plan-cards";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { allows, isBillTerm, limitLabel, planFamily } from "@/lib/entitlements";
+import { allows, isBillTerm, limitLabel, planFamily, planForBook } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
 import { IspPincodeFields } from "@/components/service-address";
 import { getUsage } from "@/lib/queries";
@@ -51,6 +51,14 @@ export default async function BillingPage({
         </div>
       </header>
       <Banner error={query.error} notice={query.notice} />
+      {usage.customers > usage.overflowCap ? (
+        <p className="fine">
+          {usage.catalog.label} holds {limitLabel(usage.customerCap)} subscribers and will not cover this book of {usage.customers}. Upgrade to {planForBook(usage.customers)}.
+          {usage.trial.active
+            ? ` The trial keeps every subscriber until ${formatDate(usage.trial.ends)}.`
+            : " Adding subscribers stays paused until this desk is on a plan that covers the book."}
+        </p>
+      ) : null}
       <p className="fine">
         Upgrade opens a payment page for that plan. During a trial, Pay on the current plan opens the same page, so the desk can be paid before the trial ends. The desk fee follows the term you pick, and GST is added on top of that fee. The ₹3 subscriber overflow, extra staff at ₹10
         each, and extra messages at ₹0.50 stay monthly. The payment gateway is the only piece still to connect.

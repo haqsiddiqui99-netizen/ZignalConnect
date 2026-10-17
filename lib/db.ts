@@ -1036,7 +1036,25 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
       if (!providerColumns.has(name)) db.exec(`ALTER TABLE providers ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
     }
     if (!providerColumns.has("otp_via")) db.exec("ALTER TABLE providers ADD COLUMN otp_via TEXT NOT NULL DEFAULT 'email'");
+    if (!providerColumns.has("agent_name")) db.exec("ALTER TABLE providers ADD COLUMN agent_name TEXT NOT NULL DEFAULT ''");
+    if (!providerColumns.has("agent_rate")) db.exec("ALTER TABLE providers ADD COLUMN agent_rate INTEGER NOT NULL DEFAULT 0");
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_commissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER NOT NULL,
+      desk_payment_id INTEGER NOT NULL UNIQUE,
+      agent_name TEXT NOT NULL,
+      product_plan TEXT NOT NULL,
+      billing_term TEXT NOT NULL,
+      plan_fee INTEGER NOT NULL,
+      commission INTEGER NOT NULL,
+      cycle_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      paid_at TEXT NOT NULL DEFAULT '',
+      UNIQUE (provider_id, cycle_key)
+    );
+  `);
   const codeColumns = columnNames(db, "login_codes");
   if (codeColumns.size > 0 && !codeColumns.has("channel")) {
     db.exec("ALTER TABLE login_codes ADD COLUMN channel TEXT NOT NULL DEFAULT 'email'");

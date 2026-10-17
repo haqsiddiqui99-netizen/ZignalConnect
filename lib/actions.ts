@@ -17,6 +17,7 @@ import {
   isProductPlan,
   limitLabel,
   minimumPlan,
+  planForBook,
   planFamily,
   planFitsBase,
   quotePremium,
@@ -52,6 +53,7 @@ import {
 import { cleanGstin, gstAdded, gstMode, isGstin, isIndianState } from "@/lib/tax";
 import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
 import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
+import { bookAgentCommission } from "@/lib/commission";
 import { syncDeskOverflow } from "@/lib/receipts";
 import { promiseAllowed, promiseWindow, renewalAfterPayment } from "@/lib/promise-pay";
 import { nextDeskFeeDate, postDeskWelcome, postOnboardingMessage, sendDeskNote } from "@/lib/renewals";
@@ -410,6 +412,7 @@ function trialBlock(usage: ReturnType<typeof getUsage>) {
 }
 
 function capBlock(usage: ReturnType<typeof getUsage>) {
+  if (usage.trial.active) return "";
   if (usage.customers < usage.overflowCap) return "";
   return `${usage.catalog.label} includes ${limitLabel(usage.customerCap)} subscribers, with a 10% overflow up to ${limitLabel(usage.overflowCap)}. Move to the next tier to add more.`;
 }
@@ -1875,7 +1878,7 @@ export async function importCustomers(formData: FormData) {
   );
   const accountEmails = new Set(parsed.accounts.map((row) => sheetEmail(row)).filter(Boolean));
   const seen = new Set<string>();
-  let slots = usage.overflowSlots;
+  let slots = usage.trial.active ? Number.POSITIVE_INFINITY : usage.overflowSlots;
   const issues: { line: number; message: string }[] = [];
   let imported = 0;
   let updated = 0;
@@ -2274,6 +2277,11 @@ export async function importCustomers(formData: FormData) {
   }
   if (imported > 0) syncDeskOverflow(session.providerId);
   refresh();
+  const after = getUsage(session.providerId);
+  const upgradeNote =
+    after.trial.active && after.customers > after.overflowCap
+      ? ` ${after.catalog.label} holds ${limitLabel(after.customerCap)} subscribers and will not cover this book of ${after.customers}. Upgrade to ${planForBook(after.customers)}. The trial keeps every subscriber until ${formatDate(after.trial.ends)}.`
+      : "";
   const summary = [`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ");
   const welcomeNote =
     welcomes.length === 0
@@ -2282,7 +2290,7 @@ export async function importCustomers(formData: FormData) {
         ? " A welcome email with a private password was sent to each new subscriber."
         : ` ${welcomeFailed} welcome email${welcomeFailed === 1 ? "" : "s"} could not be sent. Use Send reset link for those lines.`;
   go("/provider/import", {
-    notice: `${summary}.${welcomeNote}`,
+    notice: `${summary}.${welcomeNote}${upgradeNote}`,
     batch: String(batchId),
   });
 }
@@ -3447,8 +3455,8 @@ export async function recordDeskPayment(formData: FormData) {
   const method = readText(formData, "method");
   const reference = readText(formData, "reference") || makeRef();
   const methods = ["UPI", "Bank transfer", "Cash", "Other"];
-  const row = one<{ id: number; provider_id: number; paid_at: string }>(
-    "SELECT id, provider_id, paid_at FROM desk_payments WHERE id = ?",
+  const row = one<{ id: number; provider_id: number; paid_at: string; period: string }>(
+    "SELECT id, provider_id, paid_at, period FROM desk_payments WHERE id = ?",
     id,
   );
   if (!row) go(back, { error: "That desk fee was not found." });
@@ -3462,8 +3470,50 @@ export async function recordDeskPayment(formData: FormData) {
   if (row.paid_at) go(receipt);
   run("UPDATE desk_payments SET method = ?, reference = ?, paid_at = ? WHERE id = ?", method, reference, nowStamp(), id);
   run("UPDATE providers SET promise_on = '' WHERE id = ?", row.provider_id);
+  const desk = getProvider(row.provider_id);
+  if (desk) {
+    const term: BillTerm = isBillTerm(desk.billing_term) ? desk.billing_term : "monthly";
+    bookAgentCommission({
+      providerId: desk.id,
+      deskPaymentId: row.id,
+      period: row.period,
+      plan: desk.product_plan,
+      term,
+      agentName: desk.agent_name || "",
+      agentRate: Number(desk.agent_rate) || 0,
+    });
+  }
   refresh();
   go(receipt);
+}
+
+export async function saveDeskAgent(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("provider_id"));
+  const back = `/zignal/provider/${id}?tab=account`;
+  const provider = Number.isInteger(id) ? getProvider(id) : undefined;
+  if (!provider) go(back, { error: "That desk was not found." });
+  const name = readText(formData, "agent_name").slice(0, 80);
+  const rateText = readText(formData, "agent_rate");
+  const rate = rateText === "" ? 0 : Number(rateText);
+  if (!Number.isInteger(rate) || rate < 0 || rate > 1000000) {
+    go(back, { error: "The monthly commission is a whole number of rupees, or leave it blank for the rate card." });
+  }
+  run("UPDATE providers SET agent_name = ?, agent_rate = ? WHERE id = ?", name, rate, id);
+  refresh();
+  go(back, { notice: name ? `${name} is the agent on this desk.` : "The agent was removed from this desk." });
+}
+
+export async function markAgentCommissionPaid(formData: FormData) {
+  await requireOperator();
+  const id = Number(formData.get("commission_id"));
+  const requested = readText(formData, "return_to");
+  const back = /^\/zignal\/(agents|provider\/\d+(\?[A-Za-z0-9_=&-]*)?)$/.test(requested) ? requested : "/zignal/agents";
+  const row = one<{ id: number; paid_at: string }>("SELECT id, paid_at FROM agent_commissions WHERE id = ?", id);
+  if (!row) go(back, { error: "That commission was not found." });
+  if (!row.paid_at) run("UPDATE agent_commissions SET paid_at = ? WHERE id = ?", nowStamp(), id);
+  refresh();
+  go(back, { notice: "Commission marked paid to the agent." });
 }
 
 

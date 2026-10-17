@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FilterForm, FilterLink } from "@/components/filter-form";
-import { cancelDeskPromise, recordDeskPayment, saveDeskPromise, sendDeskMail } from "@/lib/actions";
+import { cancelDeskPromise, markAgentCommissionPaid, recordDeskPayment, saveDeskAgent, saveDeskPromise, sendDeskMail } from "@/lib/actions";
+import { agentCommission } from "@/lib/commission";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner, LineId, StatusPill } from "@/components/ui";
 import { requireOperator } from "@/lib/auth";
@@ -18,6 +19,7 @@ import {
   collectLine,
   getProvider,
   maskAccount,
+  listAgentCommissions,
   listDeskNotices,
   listProviderDeskBills,
   getPlatformProfile,
@@ -186,6 +188,52 @@ type Tab = (typeof TABS)[number]["id"];
 function readTab(value: string | undefined): Tab {
   if (value === "subscribers" || value === "invoice" || value === "payment" || value === "reminders") return value;
   return "account";
+}
+
+function AgentPayouts({ providerId }: { providerId: number }) {
+  const rows = listAgentCommissions(providerId);
+  if (rows.length === 0) return null;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h2>Commissions</h2>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Term</th>
+              <th className="num">Fee</th>
+              <th className="num">Commission</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.agent_name}</td>
+                <td>{row.billing_term}</td>
+                <td className="num">{formatInr(row.plan_fee)}</td>
+                <td className="num">{formatInr(row.commission)}</td>
+                <td>
+                  {row.paid_at ? (
+                    `Paid ${formatStamp(row.paid_at)}`
+                  ) : (
+                    <form action={markAgentCommissionPaid}>
+                      <input type="hidden" name="commission_id" value={row.id} />
+                      <input type="hidden" name="return_to" value={`/zignal/provider/${providerId}?tab=account`} />
+                      <SubmitButton className="btn small" pendingLabel="Saving…">
+                        Mark paid
+                      </SubmitButton>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function Fact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
@@ -359,6 +407,11 @@ export default async function ProviderDeskPage({
                   <input name="reference" placeholder="UPI or bank reference" />
                 </label>
               </div>
+              <p className="fine">
+                {provider.agent_name
+                  ? `Recording this payment writes ${formatInr(agentCommission(planId, termId, provider.agent_rate || 0))} for ${provider.agent_name}. One commission is written for each ${term?.label.toLowerCase() ?? "month"}.`
+                  : "No sales agent is saved, so this payment will not write a commission."}
+              </p>
               <SubmitButton pendingLabel="Saving…">Record payment</SubmitButton>
             </form>
           ))}
@@ -589,7 +642,33 @@ export default async function ProviderDeskPage({
           <Fact label="Closing note" value={provider.quit_reason} wide />
           <Fact label="Network" value={network} />
           <Fact label="Router" value={provider.line_host} />
+          <Fact label="Sales agent" value={provider.agent_name || ""} />
         </dl>
+        <form action={saveDeskAgent} className="stack" style={{ marginTop: 16 }}>
+          <input type="hidden" name="provider_id" value={provider.id} />
+          <h2>Sales agent</h2>
+          <p className="fine">
+            The commission is taken from the rate card when a desk fee is recorded. Leave the amount blank to use that card. GST is not part of the commission.
+          </p>
+          <div className="row-2">
+            <label className="field">
+              <span>Agent name</span>
+              <input name="agent_name" defaultValue={provider.agent_name || ""} maxLength={80} placeholder="Name of the person who brought this desk" />
+            </label>
+            <label className="field">
+              <span>Monthly commission</span>
+              <input name="agent_rate" inputMode="numeric" defaultValue={provider.agent_rate > 0 ? String(provider.agent_rate) : ""} placeholder="Rate card" />
+            </label>
+          </div>
+          <p className="fine">
+            This term owes {formatInr(agentCommission(planId, termId, provider.agent_rate || 0))}
+            {provider.agent_name ? ` to ${provider.agent_name}` : ""}. A quarterly fee uses 10% off, and a yearly fee uses 15% off.
+          </p>
+          <SubmitButton className="btn small" pendingLabel="Saving…">
+            Save agent
+          </SubmitButton>
+        </form>
+        <AgentPayouts providerId={provider.id} />
       </article>
       </>
       ) : null}
