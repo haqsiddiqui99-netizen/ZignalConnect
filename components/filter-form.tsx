@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useTransition, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { Spinner } from "@/components/spinner";
 
 type Shot = { x: number; y: number; rows: number[] };
 
 let pending: Shot | null = null;
+
+const FilterBusy = createContext(false);
 
 function capture(): Shot {
   const rows = Array.from(document.querySelectorAll<HTMLElement>(".table-wrap")).map((node) => node.scrollLeft);
@@ -65,6 +68,7 @@ export function FilterForm({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const [busy, startTransition] = useTransition();
 
   useEffect(() => {
     if (!pending) return;
@@ -81,13 +85,32 @@ export function FilterForm({
     const path = action || window.location.pathname;
     const query = params.toString();
     keepPlace();
-    router.push(query ? `${path}?${query}` : path, { scroll: false });
+    startTransition(() => {
+      router.push(query ? `${path}?${query}` : path, { scroll: false });
+    });
   }
 
   return (
     <form className={className} action={action} method="get" onSubmit={onSubmit}>
-      {children}
+      <FilterBusy.Provider value={busy}>{children}</FilterBusy.Provider>
     </form>
+  );
+}
+
+// Submit button for a FilterForm. Shows the spinner while the new results load.
+export function FilterButton({ className = "btn small", pendingLabel = "Loading…", children }: { className?: string; pendingLabel?: string; children: ReactNode }) {
+  const busy = useContext(FilterBusy);
+  return (
+    <button type="submit" className={className} disabled={busy} aria-busy={busy}>
+      {busy ? (
+        <>
+          <Spinner />
+          <span role="status">{pendingLabel}</span>
+        </>
+      ) : (
+        children
+      )}
+    </button>
   );
 }
 

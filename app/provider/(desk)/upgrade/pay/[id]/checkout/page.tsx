@@ -62,9 +62,9 @@ export default async function UpgradeCheckoutPage({
               {session.isOwner ? (
                 <form action={clearUpgradePromo}>
                   <input type="hidden" name="order_id" value={order.id} />
-                  <button className="promo-clear" type="submit">
+                  <SubmitButton className="promo-clear" pendingLabel="Removing…">
                     Remove
-                  </button>
+                  </SubmitButton>
                 </form>
               ) : null}
             </div>

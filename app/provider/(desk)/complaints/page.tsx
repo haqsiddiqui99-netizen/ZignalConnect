@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { ComplaintTable } from "@/components/complaint-table";
-import { FilterForm, FilterLink } from "@/components/filter-form";
+import { FilterButton, FilterForm, FilterLink } from "@/components/filter-form";
 import { Banner } from "@/components/ui";
 import { COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, complaintCode, complaintIsFinished, isComplaintStatus, slaLabel, type ComplaintStatus } from "@/lib/complaints";
 import { listComplaints, listStaff } from "@/lib/queries";
@@ -162,9 +162,7 @@ export default async function AdminComplaints({
                 </option>
               ))}
             </select>
-            <button className="btn small" type="submit">
-              Filter
-            </button>
+            <FilterButton>Filter</FilterButton>
             <FilterLink className="btn small" href="/provider/complaints">
               Reset
             </FilterLink>

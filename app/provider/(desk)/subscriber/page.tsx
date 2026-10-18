@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FilterForm, FilterLink } from "@/components/filter-form";
+import { FilterButton, FilterForm, FilterLink } from "@/components/filter-form";
 import { requireRole } from "@/lib/auth";
 import { billCycleLabel } from "@/lib/bill-cycle";
 import { formatDate, formatInr, isDate, todayISO } from "@/lib/format";
@@ -87,9 +87,7 @@ export default async function CustomersPage({
               </option>
             ))}
           </select>
-          <button className="btn small" type="submit">
-            Filter
-          </button>
+          <FilterButton>Filter</FilterButton>
           <FilterLink className="btn small" href="/provider/subscriber">
             Reset
           </FilterLink>

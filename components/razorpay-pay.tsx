@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Spinner } from "@/components/spinner";
 
 type RazorpayResponse = {
   razorpay_order_id: string;
@@ -129,7 +130,8 @@ export function RazorpayPay({
 
   return (
     <>
-      <button type="button" className="btn primary pay-submit" onClick={start} disabled={busy}>
+      <button type="button" className="btn primary pay-submit" onClick={start} disabled={busy} aria-busy={busy}>
+        {busy ? <Spinner /> : null}
         {label}
       </button>
       {message ? (

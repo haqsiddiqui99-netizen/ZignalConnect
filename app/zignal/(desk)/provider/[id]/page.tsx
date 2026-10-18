@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FilterForm, FilterLink } from "@/components/filter-form";
+import { FilterButton, FilterForm, FilterLink } from "@/components/filter-form";
 import { cancelDeskPromise, markAgentCommissionPaid, recordDeskPayment, saveDeskAgent, saveDeskPromise, sendDeskMail } from "@/lib/actions";
 import { agentCommission } from "@/lib/commission";
 import { SubmitButton } from "@/components/submit-button";
@@ -691,9 +691,7 @@ export default async function ProviderDeskPage({
               </option>
             ))}
           </select>
-          <button className="btn small" type="submit">
-            Filter
-          </button>
+          <FilterButton>Filter</FilterButton>
           <FilterLink className="btn small" href={`/zignal/provider/${providerId}?tab=subscribers`}>
             Reset
           </FilterLink>

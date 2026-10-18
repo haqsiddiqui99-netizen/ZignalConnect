@@ -6,6 +6,7 @@ import { CATALOG } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { pendingLogin } from "@/lib/login-code";
 import { BrandMark } from "@/components/brand-mark";
+import { DemoVideo } from "@/components/demo-video";
 import { SITE_LINKS } from "@/components/site-shell";
 import { Banner } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
@@ -62,6 +63,7 @@ export default async function LoginPage({
                 {link.label}
               </Link>
             ))}
+            <DemoVideo variant="nav" />
           </nav>
         </div>
         <div>
@@ -71,6 +73,9 @@ export default async function LoginPage({
             Each ISP picks a plan from its subscriber base. Pro holds 500, Ultra holds 1,000, and Premium runs from
             3,000 to 30,000.
           </p>
+          <div className="login-demo">
+            <DemoVideo variant="hero" />
+          </div>
           <div className="login-stats">
             <div>
               <b>{formatInr(CATALOG.pro.price)}</b>
@@ -102,9 +107,11 @@ export default async function LoginPage({
         </div>
       </section>
       <section className="login-panel">
-        <p className="login-open">
-          New ISP? <Link href="/signup">Open a desk here</Link>
-        </p>
+        <div className="login-open">
+          <p>
+            New ISP? <Link href="/signup">Open a desk here</Link>
+          </p>
+        </div>
         <div className="panel-card">
           <h2>Sign in</h2>
           <Banner error={error} notice={notice === "sent" ? "A new code is on its way." : undefined} />
@@ -156,7 +163,7 @@ export default async function LoginPage({
                 <input name="password" type="password" autoComplete="current-password" aria-label="Password" required />
               </label>
               <p className="fine">A desk sign-in then asks for a code sent to the email or WhatsApp chosen for that desk.</p>
-              <SubmitButton>Sign in</SubmitButton>
+              <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
             </form>
           )}
           <p className="fine login-legal" style={{ marginTop: 14 }}>

@@ -1,4 +1,4 @@
-import { FilterForm, FilterLink } from "@/components/filter-form";
+import { FilterButton, FilterForm, FilterLink } from "@/components/filter-form";
 import { requireOperator } from "@/lib/auth";
 import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
@@ -179,9 +179,7 @@ export default async function OperatorRevenue({
             <span>To</span>
             <input type="date" name="to" defaultValue={query.to ?? ""} />
           </label>
-          <button className="btn small" type="submit">
-            Show payments
-          </button>
+          <FilterButton>Show payments</FilterButton>
           <FilterLink className="btn small" href="/zignal/revenue">
             Clear
           </FilterLink>

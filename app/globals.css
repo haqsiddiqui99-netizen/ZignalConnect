@@ -216,16 +216,86 @@ svg.brand-mark { display: block; background: #14261e; box-shadow: inset 0 0 0 1p
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px 18px;
   color: var(--muted);
   font-size: 14px;
 }
-.login-open a {
+.login-open > p { margin: 0; }
+.login-open > p a {
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
   margin-left: 4px;
 }
-.login-open a:hover { color: var(--forest); }
+.login-open > p a:hover { color: var(--forest); }
+.demo-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 14px 6px 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.demo-open svg { width: 22px; height: 22px; flex: none; }
+.demo-open:hover, .demo-open:focus-visible { background: var(--forest); border-color: var(--forest); color: #f6f1e8; }
+.demo-open.nav {
+  padding: 3px 13px 3px 6px;
+  background: transparent;
+  color: #f6f1e8;
+  border-color: rgba(246, 241, 232, 0.4);
+}
+.demo-open.nav:hover, .demo-open.nav:focus-visible { background: #f6f1e8; border-color: #f6f1e8; color: var(--forest); }
+.login-demo { margin-top: 22px; }
+.demo-open.hero {
+  padding: 9px 20px 9px 10px;
+  font-size: 16px;
+  background: transparent;
+  color: #f6f1e8;
+  border-color: rgba(246, 241, 232, 0.45);
+}
+.demo-open.hero svg { width: 26px; height: 26px; }
+.demo-open.hero:hover, .demo-open.hero:focus-visible { background: #f6f1e8; border-color: #f6f1e8; color: var(--forest); }
+.demo-dialog {
+  width: min(880px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  box-shadow: var(--shadow);
+}
+.demo-dialog::backdrop { background: rgba(20, 38, 30, 0.6); }
+.demo-sheet { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.demo-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.demo-head .eyebrow { margin: 0; color: var(--muted); }
+.demo-head h2 { margin: 4px 0 0; font-size: 26px; text-align: left; }
+.demo-tabs { display: flex; gap: 8px; }
+.demo-tabs button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.demo-tabs button[aria-pressed="true"] { background: var(--forest); border-color: var(--forest); color: #f6f1e8; }
+.demo-video { width: 100%; aspect-ratio: 16 / 9; background: #0d1a14; border-radius: 12px; }
+.demo-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--muted); }
+.demo-sheet a.btn { margin-left: 0; color: #f6f1e8; }
+@media (max-width: 520px) {
+  .login-open { left: 20px; right: 20px; height: auto; flex-wrap: wrap; justify-content: space-between; }
+  .demo-head h2 { font-size: 20px; }
+}
 .panel-card h2 { font-size: 36px; margin: 0 0 6px; text-align: center; }
 .panel-card .password-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .panel-card .password-line a { color: var(--ink); font-size: 13px; font-weight: 400; text-decoration: none; }
@@ -417,6 +487,24 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
 .btn.light { background: #f6f1e8; color: var(--forest); border-color: transparent; }
 .btn.small { padding: 7px 12px; font-size: var(--text-ui); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
+.btn[aria-busy="true"]:disabled { opacity: 0.92; }
+.btn-spinner {
+  --ring: 2.5px;
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.2em;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, currentColor 330deg, transparent 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) - 0.5px), #000 calc(100% - var(--ring)));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) - 0.5px), #000 calc(100% - var(--ring)));
+  animation: btn-spin 0.75s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner { animation-duration: 2.4s; }
+}
 .demo-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .fine { color: var(--muted); font-size: var(--text-fine); }
 .info-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }

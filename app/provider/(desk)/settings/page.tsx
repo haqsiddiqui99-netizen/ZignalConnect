@@ -218,9 +218,9 @@ export default async function DeskSettings({
               </form>
               {provider?.bank_account ? (
                 <form action={removeCollectBank}>
-                  <button className="btn small" type="submit">
+                  <SubmitButton className="btn small" pendingLabel="Removing…">
                     Remove bank account
-                  </button>
+                  </SubmitButton>
                 </form>
               ) : null}
             </div>

@@ -176,9 +176,9 @@ export default async function OperatorSettings({
                 </span>
                 <form action={coupon.active ? retirePlanCoupon : restorePlanCoupon} style={{ marginTop: 8 }}>
                   <input type="hidden" name="coupon_id" value={coupon.id} />
-                  <button className="btn small" type="submit">
+                  <SubmitButton className="btn small" pendingLabel="Saving…">
                     {coupon.active ? "Turn off" : "Turn on"}
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             ))}

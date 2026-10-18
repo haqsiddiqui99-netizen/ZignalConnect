@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FilterForm, FilterLink } from "@/components/filter-form";
+import { FilterButton, FilterForm, FilterLink } from "@/components/filter-form";
 import { requireRole } from "@/lib/auth";
 import { DeskFeeTable } from "@/components/desk-fee-table";
 import { RevenueChart } from "@/components/revenue-chart";
@@ -113,9 +113,7 @@ export default async function PaymentsPage({
           <span>To</span>
           <input type="date" name="to" defaultValue={query.to ?? ""} />
         </label>
-        <button className="btn small" type="submit">
-          Show revenue
-        </button>
+        <FilterButton>Show revenue</FilterButton>
         <FilterLink className="btn small" href="/provider/revenue">
           Clear
         </FilterLink>
