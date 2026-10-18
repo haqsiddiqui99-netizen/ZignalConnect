@@ -51,7 +51,7 @@ import {
   type BillCycle,
 } from "@/lib/bill-cycle";
 import { cleanGstin, gstAdded, gstMode, isGstin, isIndianState } from "@/lib/tax";
-import { collectSubscriberPayment, collectUpgradePayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
+import { collectSubscriberPayment, markUpgradePaid, orderPayable, promoOff, type UpgradeOrder } from "@/lib/checkout";
 import { readGatewayPayment, savedPaymentLine } from "@/lib/pay-instrument";
 import { bookAgentCommission } from "@/lib/commission";
 import { syncDeskOverflow } from "@/lib/receipts";
@@ -3132,18 +3132,9 @@ export async function payUpgrade(formData: FormData) {
   if (!order || order.provider_id !== session.providerId) go("/provider/upgrade", { error: "That payment was not found." });
   if (!session.isOwner) go(`/provider/upgrade/pay/${id}`, { error: "Only the desk owner can pay for a plan." });
   if (order.status === "paid") redirect("/provider/upgrade?notice=Plan%20updated.");
-  const instrument = readGatewayPayment(formData);
-  if (!instrument.ok) go(`/provider/upgrade/pay/${id}/checkout`, { error: instrument.error });
-  let payment = instrument.payment;
-  if (payment.method === "Auto-pay") {
-    const saved = savedPaymentLine(getProvider(session.providerId));
-    if (!saved) go(`/provider/upgrade/pay/${id}/checkout`, { error: "Save a payment method in Settings before using auto-pay." });
-    payment = { method: "Auto-pay", detail: saved };
-  }
-  const payable = orderPayable(order);
-  if (payable > 0) {
-    const result = collectUpgradePayment(order.id, payment);
-    if (!result.ok) redirect(`/provider/upgrade/pay/${id}/checkout?notice=gateway`);
+  // Anything above zero is paid in Razorpay Checkout (see /api/razorpay). Only a fully discounted order is settled here.
+  if (orderPayable(order) > 0) {
+    go(`/provider/upgrade/pay/${id}/checkout`, { error: "Use the Pay button to complete this payment." });
   }
   markUpgradePaid(order.id);
   refresh();

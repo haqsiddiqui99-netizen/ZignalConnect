@@ -3,13 +3,12 @@ import { notFound } from "next/navigation";
 import { applyUpgradePromo, clearUpgradePromo, payUpgrade } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { AddPromo } from "@/components/add-promo";
-import { PayMethods } from "@/components/pay-methods";
+import { RazorpayPay } from "@/components/razorpay-pay";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { orderPayable, type UpgradeOrder } from "@/lib/checkout";
 import { one } from "@/lib/db";
-import { savedPaymentLine } from "@/lib/pay-instrument";
-import { getProvider } from "@/lib/queries";
+import { razorpayConfigured } from "@/lib/razorpay";
 import { CATALOG, limitLabel } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 
@@ -29,11 +28,7 @@ export default async function UpgradeCheckoutPage({
   if (!order || order.provider_id !== session.providerId) notFound();
   const plan = CATALOG[order.product_plan];
   const payable = orderPayable(order);
-  const saved = savedPaymentLine(getProvider(session.providerId));
-  const notice =
-    query.notice === "gateway"
-      ? "The payment gateway is not connected yet. Nothing was charged, and this desk stays on its current plan."
-      : query.notice;
+  const notice = query.notice;
 
   return (
     <>
@@ -45,7 +40,7 @@ export default async function UpgradeCheckoutPage({
             </Link>
             <h1>Pay {order.plan_label}</h1>
           </div>
-          <p>Choose how this payment is collected. The plan stays as it is until the gateway is connected.</p>
+          <p>Pay securely with Razorpay. The plan stays as it is until the payment is confirmed.</p>
         </div>
       </header>
       <Banner error={query.error} notice={notice} />
@@ -82,15 +77,25 @@ export default async function UpgradeCheckoutPage({
         ) : session.isOwner ? (
           <div className="pay-body">
             <p className="pay-note">
-              Choose how this plan payment should be collected. Nothing is taken from a card or UPI account until the payment gateway is connected, and the plan stays as it is.
+              {payable > 0
+                ? "Pay with UPI, card, net banking or wallet in the secure Razorpay window. Your plan updates as soon as the payment is confirmed."
+                : "This payment is fully covered by the promo. Confirm to move the desk onto the plan."}
             </p>
-            <form action={payUpgrade} className="pay-form">
+            <form action={payable > 0 ? applyUpgradePromo : payUpgrade} className="pay-form">
               <input type="hidden" name="order_id" value={order.id} />
-              <PayMethods saved={saved} settingsHref="/provider/settings" />
               <AddPromo code={order.promo_code || ""} action={applyUpgradePromo} />
-              <SubmitButton className="btn primary pay-submit" pendingLabel="Contacting the gateway…">
-                Pay {formatInr(payable)}
-              </SubmitButton>
+              {payable > 0 ? (
+                <RazorpayPay
+                  orderId={order.id}
+                  amountLabel={formatInr(payable)}
+                  ready={razorpayConfigured()}
+                  doneHref="/provider/upgrade?notice=Plan%20updated."
+                />
+              ) : (
+                <SubmitButton className="btn primary pay-submit" pendingLabel="Updating the plan…">
+                  Confirm the plan
+                </SubmitButton>
+              )}
             </form>
           </div>
         ) : (

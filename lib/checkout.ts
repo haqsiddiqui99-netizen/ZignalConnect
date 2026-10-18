@@ -19,6 +19,8 @@ export type UpgradeOrder = {
   billing_term: BillTerm;
   promo_code?: string;
   promo_off?: number;
+  gateway_order_id?: string;
+  gateway_payment_id?: string;
 };
 
 export function orderPayable(order: { total: number; promo_off?: number }) {
@@ -34,13 +36,9 @@ export function promoOff(amount: number, mode: "amount" | "percent", value: numb
 export type CheckoutResult = { ok: false; reason: "gateway_required" } | { ok: true };
 
 /**
- * Charge a saved upgrade order.
- * This is the only function a payment gateway should replace.
- * On a confirmed charge, call markUpgradePaid. Do not change the plan from the gateway itself.
+ * Plan upgrades are paid through Razorpay Checkout. See lib/razorpay.ts: the order is created on the server,
+ * paid in the Razorpay popup, then confirmed by settleUpgradePayment (from the browser callback and the webhook).
  */
-export function collectUpgradePayment(_orderId: number, _payment: GatewayPayment): CheckoutResult {
-  return { ok: false, reason: "gateway_required" };
-}
 
 /**
  * Charge a subscriber bill.

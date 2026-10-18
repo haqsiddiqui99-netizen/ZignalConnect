@@ -7,7 +7,7 @@ import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { ZIGNAL_ADMIN_EMAIL, ZIGNAL_ADMIN_NAME, ZIGNAL_ADMIN_PASSWORD_HASH } from "@/lib/zignal-admin";
 
-const SCHEMA = 7;
+const SCHEMA = 8;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
 
 function openDatabase() {
@@ -462,6 +462,10 @@ function ensureReceiptSchema(db: DatabaseSync) {
   if (orderColumns.size > 0 && !orderColumns.has("promo_code")) {
     db.exec("ALTER TABLE upgrade_orders ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''");
     db.exec("ALTER TABLE upgrade_orders ADD COLUMN promo_off INTEGER NOT NULL DEFAULT 0");
+  }
+  if (orderColumns.size > 0 && !orderColumns.has("gateway_order_id")) {
+    db.exec("ALTER TABLE upgrade_orders ADD COLUMN gateway_order_id TEXT NOT NULL DEFAULT ''");
+    db.exec("ALTER TABLE upgrade_orders ADD COLUMN gateway_payment_id TEXT NOT NULL DEFAULT ''");
   }
 
   const batchColumns = columnNames(db, "import_batches");
