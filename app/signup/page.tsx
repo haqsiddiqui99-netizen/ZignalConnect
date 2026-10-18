@@ -26,11 +26,6 @@ export default async function SignupPage() {
       </header>
       <div className="signup-intro">
         <h1>Open your desk</h1>
-        <p>
-          Enter the subscriber base. Pro holds up to 500, Ultra up to 1,000, and any larger book is Premium. A smaller
-          plan is refused. You can still pick a larger one. Monthly is the list price. Quarterly is 10% off, and yearly
-          is 15% off. GST is added on top.
-        </p>
       </div>
       <SignupForm />
     </main>
