@@ -100,8 +100,8 @@ export default async function LoginPage({
               <span>Cash and your own UPI. Their money does not come to Zignal.</span>
             </li>
             <li>
-              <b>Set up with you</b>
-              <span>The first desks are opened in person. Your list is imported, and the overdue lines are on the screen the same day.</span>
+              <b>Ready the same day</b>
+              <span>Import your subscriber list from a spreadsheet, and the overdue lines are on the screen the same day.</span>
             </li>
           </ul>
         </div>

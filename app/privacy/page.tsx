@@ -47,7 +47,7 @@ export default function PrivacyPage() {
           <li>Zignal sees support tickets raised from a desk.</li>
         </ul>
         <h2>What we do not do</h2>
-        <p>We do not sell the subscriber book. We do not send office payments to a bank. Card and UPI collection is not connected yet.</p>
+        <p>We do not sell the subscriber book. We do not send office payments to a bank. A desk plan is paid through Razorpay, which handles the card or UPI details, and we never see or store them. Online card and UPI collection for a subscriber bill is not connected yet.</p>
         <h2>How long we keep it</h2>
         <p>
           The book stays while the desk is open. To ask for a desk or a subscriber record to be removed, write to{" "}

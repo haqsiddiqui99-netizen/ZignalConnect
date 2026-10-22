@@ -36,8 +36,9 @@ export default function TermsPage() {
         <h2>Payments</h2>
         <p>
           A payment recorded at the office stays in the desk ledger and moves the renewal date. Zignal Connect does not
-          take that money. Online card or UPI collection for a subscriber bill, and online payment of a desk plan, are
-          not connected yet. Until they are, nothing is charged to a card or UPI account.
+          take that money. A desk plan is paid online through Razorpay, and Zignal Connect never sees or stores the
+          card number. Online card or UPI collection for a subscriber bill is not connected yet, so nothing is charged
+          to a subscriber&apos;s card or UPI account.
         </p>
         <h2>The subscriber book</h2>
         <p>

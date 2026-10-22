@@ -1119,6 +1119,10 @@ function columnNames(db: DatabaseSync, table: string) {
 }
 
 function seed(db: DatabaseSync) {
+  // The sample desk and its eight sample subscribers are for local development only.
+  // On a live site they would show up in the Zignal admin, and the morning reminders
+  // would email the sample addresses. Set SEED_DEMO_DATA=1 to force them on.
+  if (process.env.NODE_ENV === "production" && process.env.SEED_DEMO_DATA !== "1") return;
   const existing = db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
   if (existing.n > 0) return;
 
