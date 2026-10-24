@@ -38,6 +38,7 @@ import { deskWelcomeMail, isPasswordVia, loginCodeMail, mailConfigured, password
 import { sendWhatsAppCode } from "@/lib/whatsapp";
 import { deskClosedMessage, latestQuitDate, settleDesk } from "@/lib/desk-close";
 import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
+import { addHit, clearHits, clientIp, HOUR, isBlocked, MINUTE } from "@/lib/rate-limit";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import { pushLine } from "@/lib/line-link";
@@ -63,6 +64,15 @@ import { readCustomerWorkbook } from "@/lib/customer-book";
 import { paymentSource, readPaymentWorkbook } from "@/lib/payment-book";
 import { accountCategoryFromImport, collectOptions, findCataloguePromo, findPlanCoupon, getPlatformProfile, getProvider, getSubscriber, getSubscriberByUserId, getUpiClaim, getUsage, isAccountCategory, maskAccount, listCustomerCharges, listOpenDesks, listCustomerDiscounts, listCustomerExtraPlans, SUPPORT_PRIORITIES, SUPPORT_TOPICS } from "@/lib/queries";
 import { SUPPORT_STATUSES, supportIsFinished } from "@/lib/support";
+
+// Wrong-password limits. A locked email or address waits out the window; a right password clears the email's count.
+const LOGIN_WINDOW = 15 * MINUTE;
+const LOGIN_TRIES_PER_EMAIL = 8;
+const LOGIN_TRIES_PER_IP = 30;
+const CODES_PER_WINDOW = 6;
+const RESET_PER_EMAIL = 3;
+const RESET_PER_IP = 10;
+const SIGNUPS_PER_IP = 5;
 
 function go(path: string, params?: Record<string, string>): never {
   if (!params) redirect(path);
@@ -104,8 +114,19 @@ function refresh() {
 export async function login(formData: FormData) {
   const email = readText(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
+  const ip = await clientIp();
+  const emailKey = `login:e:${email}`;
+  const ipKey = ip ? `login:i:${ip}` : "";
+  if (isBlocked(emailKey, LOGIN_TRIES_PER_EMAIL, LOGIN_WINDOW) || (ipKey && isBlocked(ipKey, LOGIN_TRIES_PER_IP, LOGIN_WINDOW))) {
+    go("/", { error: "Too many sign-in attempts. Wait 15 minutes, then try again." });
+  }
   const user = authenticate(email, password);
-  if (!user) go("/", { error: "Those credentials do not match an account." });
+  if (!user) {
+    addHit(emailKey);
+    if (ipKey) addHit(ipKey);
+    go("/", { error: "Those credentials do not match an account." });
+  }
+  clearHits(emailKey);
   if (user.kind === "desk") {
     const closed = deskClosedMessage(user.id);
     if (closed) go("/", { error: closed });
@@ -128,6 +149,10 @@ export async function login(formData: FormData) {
   if (channel === "email" && !mailConfigured()) {
     go("/", { error: "Sign-in email is not connected yet. Add the mail account, then try again." });
   }
+  if (isBlocked(`code:${user.email}`, CODES_PER_WINDOW, LOGIN_WINDOW)) {
+    go("/", { error: "Too many sign-in codes were sent. Wait 15 minutes, then try again." });
+  }
+  addHit(`code:${user.email}`);
   const code = await beginLoginCode({ userId: user.id, kind: "desk", email: user.email, channel, phone });
   const mail = loginCodeMail(code);
   const sent = channel === "whatsapp" ? await sendWhatsAppCode(phone, code) : await sendMail(user.email, mail.subject, mail.text, mail.html);
@@ -175,6 +200,10 @@ export async function resendLoginCode() {
       error: next.reason === "soon" ? "Wait a moment before asking for another code." : "That sign-in code has expired. Sign in again.",
     });
   }
+  if (isBlocked(`code:${next.email}`, CODES_PER_WINDOW, LOGIN_WINDOW)) {
+    go("/", { error: "Too many sign-in codes were sent. Wait 15 minutes, then sign in again." });
+  }
+  addHit(`code:${next.email}`);
   const mail = loginCodeMail(next.code);
   const sent =
     next.channel === "whatsapp" ? await sendWhatsAppCode(next.phone, next.code) : await sendMail(next.email, mail.subject, mail.text, mail.html);
@@ -686,6 +715,16 @@ export async function resetPortalPassword(formData: FormData) {
 export async function requestPasswordReset(formData: FormData) {
   const email = readText(formData, "email").toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) go("/forgot", { error: "Enter the email you use to sign in." });
+  if (!mailConfigured()) go("/forgot", { error: "Password email is not connected yet. Add the mail account, then try again." });
+  // The answer is the same whether or not the email has an account, so this form cannot be used to find out who is a customer.
+  const ip = await clientIp();
+  const ipKey = ip ? `reset:i:${ip}` : "";
+  if (ipKey && isBlocked(ipKey, RESET_PER_IP, HOUR)) go("/forgot", { error: "Too many requests from this connection. Try again in an hour." });
+  if (ipKey) addHit(ipKey);
+  const emailKey = `reset:e:${email}`;
+  const tooOften = isBlocked(emailKey, RESET_PER_EMAIL, HOUR);
+  addHit(emailKey);
+  if (tooOften) go("/forgot", { sent: "1" });
   const user = one<{ id: number; role: "admin" | "customer"; isp_name: string | null }>(
     `SELECT u.id, u.role, p.name AS isp_name
      FROM users u
@@ -694,21 +733,18 @@ export async function requestPasswordReset(formData: FormData) {
     email,
   );
   const operator = user ? undefined : one<{ id: number }>("SELECT id FROM platform_admins WHERE lower(email) = ?", email);
-  if (!user && !operator) go("/forgot", { error: "This email is not on an account." });
-  if (!mailConfigured()) go("/forgot", { error: "Password email is not connected yet. Add the mail account, then try again." });
-  const sent = user
-    ? await mailResetLink({
-        userId: user.id,
-        kind: "desk",
-        email,
-        ispName: user.isp_name || undefined,
-        signoff: user.role === "customer" ? user.isp_name || "Zignal Connect" : "Zignal Connect",
-      })
-    : operator
-      ? await mailResetLink({ userId: operator.id, kind: "operator", email, signoff: "Zignal Connect" })
-      : null;
-  if (!sent) go("/forgot", { error: "This email is not on an account." });
-  if (!sent.ok) go("/forgot", { error: "The reset email could not be sent. Try again in a little while." });
+  if (user) {
+    // Not awaited: a slow reply would show that the email has an account. A failed send is logged by the mail code.
+    void mailResetLink({
+      userId: user.id,
+      kind: "desk",
+      email,
+      ispName: user.isp_name || undefined,
+      signoff: user.role === "customer" ? user.isp_name || "Zignal Connect" : "Zignal Connect",
+    }).catch(() => undefined);
+  } else if (operator) {
+    void mailResetLink({ userId: operator.id, kind: "operator", email, signoff: "Zignal Connect" }).catch(() => undefined);
+  }
   go("/forgot", { sent: "1" });
 }
 
@@ -1754,6 +1790,11 @@ export async function registerProvider(
     };
   }
   if (one("SELECT id FROM users WHERE email = ?", email)) return { error: "That email is already used for a login." };
+  const ip = await clientIp();
+  if (ip) {
+    if (isBlocked(`signup:i:${ip}`, SIGNUPS_PER_IP, HOUR)) return { error: "Too many desks were opened from this connection. Try again in an hour, or write to support@zignalconnect.com." };
+    addHit(`signup:i:${ip}`);
+  }
 
   const trialEnds = addDays(todayISO(), CATALOG[plan].trialDays);
   const db = getDb();

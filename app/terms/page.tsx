@@ -14,7 +14,7 @@ export default function TermsPage() {
       <section className="site-hero">
         <p className="site-eyebrow">Terms</p>
         <h1>The rules for using a desk.</h1>
-        <p className="site-lede">These terms apply when an ISP opens a desk or a subscriber signs in to a portal. They were last updated on 6 October 2026.</p>
+        <p className="site-lede">These terms apply when an ISP opens a desk or a subscriber signs in to a portal. They were last updated on 24 October 2026.</p>
       </section>
       <article className="card site-card legal">
         <h2>The service</h2>
@@ -37,13 +37,19 @@ export default function TermsPage() {
         <p>
           A payment recorded at the office stays in the desk ledger and moves the renewal date. Zignal Connect does not
           take that money. A desk plan is paid online through Razorpay, and Zignal Connect never sees or stores the
-          card number. Online card or UPI collection for a subscriber bill is not connected yet, so nothing is charged
-          to a subscriber&apos;s card or UPI account.
+          card number.
+        </p>
+        <p>
+          An ISP may add its own UPI ID. The subscriber&apos;s Pay page then shows a QR code that sends money straight
+          from the subscriber&apos;s UPI app to that UPI ID. The subscriber then types the 12-digit UTR reference, and the
+          ISP checks its own bank statement and confirms or rejects the payment. Zignal Connect does not receive, hold,
+          check, or refund that money, and is not a party to it. Online card collection for a subscriber bill is not
+          connected yet, so nothing is charged to a subscriber&apos;s card.
         </p>
         <h2>The subscriber book</h2>
         <p>
-          The ISP is responsible for the names, mobiles, addresses, and payment notes it enters, and for the money it
-          collects from subscribers. What we store, and who can see it, is on the <Link href="/privacy">Privacy</Link>{" "}
+          The ISP is responsible for the names, mobiles, addresses, and payment notes it enters, for the UPI ID it adds
+          being correct and its own, and for the money it collects from subscribers. What we store, and who can see it, is on the <Link href="/privacy">Privacy</Link>{" "}
           page.
         </p>
         <h2>Fair use</h2>

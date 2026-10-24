@@ -198,6 +198,8 @@ export async function requireOperator() {
   return session;
 }
 
+const NO_ACCOUNT_HASH = `${"00".repeat(16)}:${"00".repeat(32)}`;
+
 export function authenticate(email: string, password: string) {
   const normalized = email.trim().toLowerCase();
   const user = one<Pick<UserRow, "id" | "email" | "password_hash" | "role" | "name">>(
@@ -209,6 +211,11 @@ export function authenticate(email: string, password: string) {
     "SELECT id, email, password_hash, name FROM platform_admins WHERE email = ?",
     normalized,
   );
-  if (!operator || !verifyPassword(password, operator.password_hash)) return null;
+  if (!operator) {
+    // Spend the same time as a real check, so response speed does not reveal which emails have an account.
+    if (!user) verifyPassword(password, NO_ACCOUNT_HASH);
+    return null;
+  }
+  if (!verifyPassword(password, operator.password_hash)) return null;
   return { id: operator.id, email: operator.email, role: "operator" as const, name: operator.name, kind: "operator" as const };
 }

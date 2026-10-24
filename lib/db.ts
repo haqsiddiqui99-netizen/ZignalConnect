@@ -7,7 +7,7 @@ import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { ZIGNAL_ADMIN_EMAIL, ZIGNAL_ADMIN_NAME, ZIGNAL_ADMIN_PASSWORD_HASH } from "@/lib/zignal-admin";
 
-const SCHEMA = 8;
+const SCHEMA = 9;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
 
 function openDatabase() {
@@ -1110,6 +1110,17 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
       value INTEGER NOT NULL,
       UNIQUE (provider_id, name)
     );
+  `);
+  // Every desk page filters users by provider and counts customers by plan. These keep that fast on a big book.
+  // rate_hits holds recent sign-in, reset and signup attempts (see lib/rate-limit.ts).
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_plan ON customers(plan_id);
+    CREATE TABLE IF NOT EXISTS rate_hits (
+      key TEXT NOT NULL,
+      at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rate_hits_key ON rate_hits(key, at);
   `);
 }
 

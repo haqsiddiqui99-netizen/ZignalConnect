@@ -14,7 +14,7 @@ export default function RefundPage() {
       <section className="site-hero">
         <p className="site-eyebrow">Refund</p>
         <h1>When a desk fee comes back.</h1>
-        <p className="site-lede">This covers fees an ISP pays Zignal Connect for a desk. It was last updated on 6 October 2026.</p>
+        <p className="site-lede">This covers fees an ISP pays Zignal Connect for a desk. It was last updated on 24 October 2026.</p>
       </section>
       <article className="card site-card legal">
         <h2>The trial</h2>
@@ -32,9 +32,9 @@ export default function RefundPage() {
         </p>
         <h2>Subscriber payments</h2>
         <p>
-          Money a subscriber pays the ISP at the office is recorded on the desk. Zignal Connect does not hold it, and
-          does not refund it. That is between the ISP and the subscriber. Online card and UPI collection is not
-          connected yet.
+          Money a subscriber pays the ISP, at the office or to the ISP&apos;s UPI ID, is recorded on the desk. It goes
+          straight to the ISP. Zignal Connect does not hold it, and does not refund it. That is between the ISP and the
+          subscriber. Online card collection is not connected yet.
         </p>
         <h2>How to ask</h2>
         <p>
