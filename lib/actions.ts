@@ -1850,6 +1850,14 @@ export async function importCustomers(formData: FormData) {
   if (upload.name.toLowerCase().endsWith(".csv") || upload.type.includes("csv")) {
     go("/provider/import", { error: "Customer import is an Excel file with Account, Internet plan, One-time charge, and Discount tabs. Download the template." });
   }
+  // Optional: the UPI ID subscribers pay. Left blank, whatever the desk already has is kept.
+  const collectUpi = readText(formData, "collect_upi").replace(/\s+/g, "");
+  const collectPayee = readText(formData, "collect_payee") || session.brandName;
+  if (collectUpi) {
+    if (!session.isOwner) go("/provider/import", { error: "Only the owner can set the UPI ID. Leave it blank, or ask the owner to import." });
+    if (!UPI_ID.test(collectUpi)) go("/provider/import", { error: "Enter a UPI ID such as harbourfiber@okhdfcbank, or leave it blank." });
+    if (collectPayee.length < 2 || collectPayee.length > 60) go("/provider/import", { error: "Enter the payee name shown in the UPI app, 2 to 60 characters." });
+  }
   const parsed = await readCustomerWorkbook(Buffer.from(await upload.arrayBuffer()));
   if (!parsed.ok) go("/provider/import", { error: parsed.error });
   if (parsed.accounts.length + parsed.plans.length + parsed.charges.length + parsed.discounts.length === 0) {
@@ -2276,12 +2284,15 @@ export async function importCustomers(formData: FormData) {
     if (!mailed.ok) welcomeFailed += 1;
   }
   if (imported > 0) syncDeskOverflow(session.providerId);
+  if (collectUpi) run("UPDATE providers SET collect_upi = ?, collect_payee = ? WHERE id = ?", collectUpi, collectPayee, session.providerId);
   refresh();
+  revalidatePath("/subscriber/pay");
   const after = getUsage(session.providerId);
   const upgradeNote =
     after.trial.active && after.customers > after.overflowCap
       ? ` ${after.catalog.label} holds ${limitLabel(after.customerCap)} subscribers and will not cover this book of ${after.customers}. Upgrade to ${planForBook(after.customers)}. The trial keeps every subscriber until ${formatDate(after.trial.ends)}.`
       : "";
+  const upiNote = collectUpi ? ` UPI ${collectUpi} saved. Subscribers now see its QR code on their Pay page.` : "";
   const summary = [`Imported ${imported}`, ...(updated ? [`Updated ${updated}`] : []), `Skipped ${issues.length}`].join(". ");
   const welcomeNote =
     welcomes.length === 0
@@ -2290,7 +2301,7 @@ export async function importCustomers(formData: FormData) {
         ? " A welcome email with a private password was sent to each new subscriber."
         : ` ${welcomeFailed} welcome email${welcomeFailed === 1 ? "" : "s"} could not be sent. Use Send reset link for those lines.`;
   go("/provider/import", {
-    notice: `${summary}.${welcomeNote}${upgradeNote}`,
+    notice: `${summary}.${upiNote}${welcomeNote}${upgradeNote}`,
     batch: String(batchId),
   });
 }

@@ -3,7 +3,7 @@ import { confirmUpiPayment, rejectUpiPayment } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { limitLabel, planForBook } from "@/lib/entitlements";
 import { formatDate, formatInr, formatSpeed, formatStamp } from "@/lib/format";
-import { dashboard, getUsage, listPendingUpiClaims } from "@/lib/queries";
+import { dashboard, getProvider, getUsage, listPendingUpiClaims } from "@/lib/queries";
 import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner, LineId, StatusPill } from "@/components/ui";
@@ -25,6 +25,7 @@ export default async function AdminHome({
   const session = await requireRole("admin");
   const query = await searchParams;
   syncDeskOverflow(session.providerId);
+  const provider = getProvider(session.providerId);
   const claims = listPendingUpiClaims(session.providerId);
   const stats = dashboard(session.providerId);
   const usage = getUsage(session.providerId);
@@ -45,6 +46,12 @@ export default async function AdminHome({
         </Link>
       </header>
       <Banner error={query.error} notice={query.notice} />
+      {session.isOwner && !provider?.collect_upi ? (
+        <p className="banner info">
+          Subscribers can only pay cash right now. Add your business UPI ID and they also get a UPI QR code on their Pay page.{" "}
+          <Link href="/provider/settings">Add UPI ID</Link>
+        </p>
+      ) : null}
       {claims.length > 0 ? (
         <article className="card">
           <h2>UPI awaiting confirmation</h2>

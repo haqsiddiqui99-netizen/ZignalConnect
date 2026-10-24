@@ -511,6 +511,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--forest); bo
 .banner { border-radius: 12px; padding: 12px 14px; margin: 0 0 16px; }
 .banner.good { background: var(--good-bg); color: var(--good); }
 .banner.bad { background: var(--bad-bg); color: var(--bad); }
+.banner.info { background: var(--card); border: 1px solid var(--line); }
+.banner.info a { font-weight: 600; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
 .sidebar {
@@ -615,6 +617,8 @@ a.stat.on { outline: 2px solid var(--forest); }
 .card > h3 + .fine { margin: -4px 0 12px; }
 .card > p + p { margin-top: 12px; }
 .after-form { margin-top: var(--gap); }
+.import-pay { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 16px; margin: 0; min-width: 0; }
+.import-pay legend { padding: 0 6px; font-weight: 600; }
 .card .stack + .fine,
 .card .fine + .fine { margin-top: 8px; }
 .table-wrap { overflow-x: auto; max-width: 100%; }

@@ -5,7 +5,7 @@ import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { limitLabel, planForBook } from "@/lib/entitlements";
 import { formatDate } from "@/lib/format";
-import { getImportReport, getUsage, listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
+import { getImportReport, getProvider, getUsage, listChargeCatalogue, listDiscountCatalogue, listPlans } from "@/lib/queries";
 
 export const metadata = { title: "Import" };
 
@@ -17,6 +17,7 @@ export default async function ImportPage({
   const session = await requireRole("admin");
   const query = await searchParams;
   const usage = getUsage(session.providerId);
+  const provider = getProvider(session.providerId);
   const plans = listPlans(session.providerId);
   const charges = listChargeCatalogue(session.providerId);
   const discounts = listDiscountCatalogue(session.providerId);
@@ -59,6 +60,32 @@ export default async function ImportPage({
             </p>
           ) : (
             <form action={importCustomers} className="stack">
+              <fieldset className="stack import-pay">
+                <legend>How will subscribers pay?</legend>
+                {provider?.collect_upi ? (
+                  <p className="fine">
+                    Subscribers can pay by UPI to <strong>{provider.collect_upi}</strong> or in cash. To change or remove the UPI ID, use{" "}
+                    <Link href="/provider/settings">Settings</Link>.
+                  </p>
+                ) : (
+                  <p className="fine">
+                    Cash is always shown. Add your business UPI ID and subscribers also get a UPI QR code on their Pay page. Leave it blank and they see cash only. You can add it
+                    later in <Link href="/provider/settings">Settings</Link>.
+                  </p>
+                )}
+                {session.isOwner && !provider?.collect_upi ? (
+                  <>
+                    <label className="field">
+                      <span>UPI ID (optional)</span>
+                      <input name="collect_upi" placeholder="harbourfiber@okhdfcbank" autoComplete="off" inputMode="email" maxLength={120} />
+                    </label>
+                    <label className="field">
+                      <span>Payee name shown in the UPI app (optional)</span>
+                      <input name="collect_payee" placeholder={session.brandName} autoComplete="off" maxLength={60} />
+                    </label>
+                  </>
+                ) : null}
+              </fieldset>
               <label className="field">
                 <span>Spreadsheet file</span>
                 <input name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
