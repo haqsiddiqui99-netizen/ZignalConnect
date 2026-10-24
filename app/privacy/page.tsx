@@ -27,11 +27,13 @@ export default function PrivacyPage() {
           If the owner chooses to enter them, we also keep the UPI ID and payee name shown to subscribers, the bank
           account holder, account number, IFSC, and PAN, and the sign-in details of the ISP&apos;s router or billing
           database used to switch a line on or off. These are kept so the desk can collect payments and control
-          lines, and they are stored in our database on our hosting provider&apos;s disk.
+          lines. The bank account number, the PAN, and the router or database passwords are encrypted before they are
+          stored in our database on our hosting provider&apos;s disk.
         </p>
         <p>
-          When the owner creates a staff login, the first password is shown on the owner&apos;s Team page until that
-          staff member sets their own. After that, only a hash is kept.
+          Passwords are kept only as a hash. When the owner adds a staff login, the staff member gets an email with a
+          link to choose their own password, so nobody else sees it. A new owner confirms the email by link before
+          the desk opens, and a desk that is never confirmed is removed after a week.
         </p>
         <h2>The subscriber book</h2>
         <p>

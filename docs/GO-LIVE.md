@@ -10,6 +10,7 @@ Set these on Railway, then run the smoke test at the bottom.
   - `RESEND_API_KEY`
   - `SMTP_FROM` (an address on a domain verified in Resend)
 - [ ] **`APP_URL`** = `https://www.zignalconnect.com` (used in links inside emails).
+- [ ] **`DATA_KEY`**: a long random value (32+ characters) that encrypts each desk's bank account, PAN and router passwords. Set it before the first desk saves them, and **never change or remove it afterwards**: without the same key those fields cannot be read and owners must type them in again. Keep a copy somewhere safe, outside Railway. If it is not set, the app uses a key file at `data/data.key` on the volume, which protects less (a copy of the whole volume would include the key).
 - [ ] **Zignal admin login** (`ops@zignal.connect`): confirm you know its password. The admin signs in with a password only, no emailed code.
 - [ ] Production never loads the sample desk ("Lumen Fibre"). If the live database was created before this change, remove that desk and its eight sample subscribers, or they will receive renewal emails.
 
@@ -22,7 +23,7 @@ Set these on Railway, then run the smoke test at the bottom.
 
 ## Smoke test on the live site
 
-1. Open a desk from `/signup`, sign out, sign back in (the code email must arrive).
+1. Open a desk from `/signup`. A "confirm your email" mail arrives; open the link, press the button, and the desk opens. Sign out, sign back in (the code email must arrive). Add a staff member and check they get a "set your password" email.
 2. Import a subscriber sheet.
 3. Record a payment and download the receipt.
 4. Sign in as a subscriber and raise a complaint.

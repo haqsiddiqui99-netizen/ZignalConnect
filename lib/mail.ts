@@ -113,16 +113,26 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-export function passwordResetMail(input: { ispName?: string; signoff: string; link: string; fromProvider?: boolean }) {
+export function passwordResetMail(input: {
+  ispName?: string;
+  signoff: string;
+  link: string;
+  fromProvider?: boolean;
+  /** Replaces the opening line, for example when a staff login is created. */
+  intro?: string;
+  /** How long the link works, as words. Defaults to 15 minutes. */
+  valid?: string;
+}) {
   const isp = input.ispName?.trim();
-  const intro = input.fromProvider
-    ? "Your provider asked for a new sign-in password."
-    : "A new sign-in password was requested for this email.";
+  const valid = input.valid || "15 minutes";
+  const intro =
+    input.intro ||
+    (input.fromProvider ? "Your provider asked for a new sign-in password." : "A new sign-in password was requested for this email.");
   const text = [
     intro,
     "",
     ...(isp ? [isp, ""] : []),
-    "Open this link to set a new password. It works once, for 15 minutes.",
+    `Open this link to set a new password. It works once, for ${valid}.`,
     input.link,
     "",
     "If you did not ask for this, ignore this email.",
@@ -149,7 +159,7 @@ export function passwordResetMail(input: { ispName?: string; signoff: string; li
             <td style="padding:8px 32px 32px;font-family:Georgia,Palatino,serif;color:#1c1916;">
               ${ispLine}
               <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">${escapeHtml(intro)}</p>
-              <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">Open the button to set a new password. The link works once, for 15 minutes.</p>
+              <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">Open the button to set a new password. The link works once, for ${escapeHtml(valid)}.</p>
               <p style="margin:22px 0 0;">
                 <a href="${escapeHtml(input.link)}" style="display:inline-block;background:#14261e;color:#f6f1e8;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;text-decoration:none;padding:12px 22px;border-radius:999px;">Set a new password</a>
               </p>
@@ -261,6 +271,29 @@ export function deskWelcomeMail(input: {
       <a href="${escapeHtml(origin)}" style="display:inline-block;background:#14261e;color:#f6f1e8;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;text-decoration:none;padding:12px 22px;border-radius:999px;">Sign in</a>
     </p>`;
   return letter({ ispName: input.ispName, signoff: "Zignal Connect", subject: "Welcome to Zignal Connect", text, blocks });
+}
+
+export function confirmEmailMail(input: { ispName: string; ownerName: string; link: string }) {
+  const text = [
+    `Hello ${input.ownerName},`,
+    "",
+    `Confirm this email to open the Zignal Connect desk for ${input.ispName}.`,
+    input.link,
+    "",
+    "The link works for 24 hours. If you did not ask for a desk, ignore this email and nothing will be opened.",
+    "",
+    "Best wishes,",
+    "Zignal Connect",
+  ].join("\n");
+  const blocks = `
+    <p style="margin:22px 0 0;font-size:18px;line-height:1.5;">Hello ${escapeHtml(input.ownerName)}, confirm this email to open your desk.</p>
+    <p style="margin:14px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:#6f675e;">The desk for ${escapeHtml(input.ispName)} opens as soon as you confirm. The link works for 24 hours.</p>
+    <p style="margin:22px 0 0;">
+      <a href="${escapeHtml(input.link)}" style="display:inline-block;background:#14261e;color:#f6f1e8;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;text-decoration:none;padding:12px 22px;border-radius:999px;">Confirm my email</a>
+    </p>
+    <p style="margin:18px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;line-height:1.5;color:#6f675e;">If the button does not open, copy this link into your browser:<br />${escapeHtml(input.link)}</p>
+    <p style="margin:18px 0 0;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;line-height:1.5;color:#6f675e;">If you did not ask for a desk, ignore this email and nothing will be opened.</p>`;
+  return letter({ signoff: "Zignal Connect", subject: "Confirm your email to open your desk", text, blocks });
 }
 
 export function loginCodeMail(code: string) {

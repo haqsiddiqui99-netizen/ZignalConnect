@@ -34,11 +34,12 @@ import {
   nowStamp,
   todayISO,
 } from "@/lib/format";
-import { deskWelcomeMail, isPasswordVia, loginCodeMail, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
+import { confirmEmailMail, deskWelcomeMail, isPasswordVia, loginCodeMail, mailConfigured, passwordResetMail, renewalMail, sendMail, siteOrigin, welcomeMail } from "@/lib/mail";
 import { sendWhatsAppCode } from "@/lib/whatsapp";
 import { deskClosedMessage, latestQuitDate, settleDesk } from "@/lib/desk-close";
 import { hashPassword, newSubscriberPassword, verifyPassword } from "@/lib/password";
 import { addHit, clearHits, clientIp, HOUR, isBlocked, MINUTE } from "@/lib/rate-limit";
+import { seal } from "@/lib/secret-box";
 import { complaintCode, complaintIsFinished, isComplaintStatus, slaHoursFor } from "@/lib/complaints";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
 import { pushLine } from "@/lib/line-link";
@@ -127,6 +128,9 @@ export async function login(formData: FormData) {
     go("/", { error: "Those credentials do not match an account." });
   }
   clearHits(emailKey);
+  if (user.kind === "desk" && one<{ email_verified: number }>("SELECT email_verified FROM users WHERE id = ?", user.id)?.email_verified === 0) {
+    go("/confirm", { error: "Confirm your email first. Open the link we sent you, or ask for a new one below." });
+  }
   if (user.kind === "desk") {
     const closed = deskClosedMessage(user.id);
     if (closed) go("/", { error: closed });
@@ -656,15 +660,19 @@ async function mailResetLink(input: {
   ispName?: string;
   signoff: string;
   fromProvider?: boolean;
+  /** Opening line and how long the link works, for a new staff login. Defaults to a 15-minute reset. */
+  intro?: string;
+  minutes?: number;
 }) {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const minutes = input.minutes ?? 15;
   run("DELETE FROM password_resets WHERE user_id = ? AND account_kind = ?", input.userId, input.kind);
   run(
     "INSERT INTO password_resets (user_id, token_hash, expires_at, account_kind) VALUES (?, ?, ?, ?)",
     input.userId,
     tokenHash,
-    String(Date.now() + 15 * 60 * 1000),
+    String(Date.now() + minutes * 60 * 1000),
     input.kind,
   );
   const mail = passwordResetMail({
@@ -672,6 +680,8 @@ async function mailResetLink(input: {
     signoff: input.signoff,
     link: `${siteOrigin()}/forgot/${token}`,
     fromProvider: input.fromProvider,
+    intro: input.intro,
+    valid: minutes >= 60 * 24 ? `${Math.round(minutes / (60 * 24))} days` : minutes >= 60 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`,
   });
   const sent = await sendMail(input.email, mail.subject, mail.text, mail.html);
   if (!sent.ok) run("DELETE FROM password_resets WHERE token_hash = ?", tokenHash);
@@ -774,7 +784,8 @@ export async function completePasswordReset(formData: FormData) {
     await setSession(row.user_id, "operator");
     redirect("/zignal");
   }
-  run("UPDATE users SET password_hash = ?, login_password = '' WHERE id = ?", hashPassword(nextPassword), row.user_id);
+  // Opening the emailed link proves the mailbox is theirs, so a desk owner who had not confirmed yet is confirmed now.
+  run("UPDATE users SET password_hash = ?, login_password = '', email_verified = 1 WHERE id = ?", hashPassword(nextPassword), row.user_id);
   run("DELETE FROM password_resets WHERE user_id = ? AND account_kind = 'desk'", row.user_id);
   refresh();
   await setSession(row.user_id, "desk");
@@ -1619,9 +1630,9 @@ export async function saveCollectBank(formData: FormData) {
   run(
     "UPDATE providers SET bank_holder = ?, bank_account = ?, bank_ifsc = ?, bank_pan = ?, bank_status = 'pending', bank_changed_at = ? WHERE id = ?",
     holder,
-    account,
+    seal(account),
     ifsc,
-    pan,
+    seal(pan),
     nowStamp(),
     session.providerId,
   );
@@ -1789,7 +1800,17 @@ export async function registerProvider(
       error: `${CATALOG[plan].label} holds ${limitLabel(CATALOG[plan].customers)} subscribers. A book of ${base} needs ${fit.label}.`,
     };
   }
-  if (one("SELECT id FROM users WHERE email = ?", email)) return { error: "That email is already used for a login." };
+  const taken = one<{ id: number; email_verified: number; provider_id: number | null }>(
+    "SELECT id, email_verified, provider_id FROM users WHERE email = ?",
+    email,
+  );
+  // A desk that was never confirmed has no data and nobody can sign in to it, so the real owner may take over that email.
+  if (taken && taken.email_verified === 1) return { error: "That email is already used for a login." };
+  // The owner confirms the email by link before the desk opens. A dev machine with no mail account skips that step.
+  const mailReady = mailConfigured();
+  if (!mailReady && process.env.NODE_ENV === "production") {
+    return { error: "Email is not connected on the server yet, so the confirmation link cannot be sent. Please try again later." };
+  }
   const ip = await clientIp();
   if (ip) {
     if (isBlocked(`signup:i:${ip}`, SIGNUPS_PER_IP, HOUR)) return { error: "Too many desks were opened from this connection. Try again in an hour, or write to support@zignalconnect.com." };
@@ -1802,6 +1823,14 @@ export async function registerProvider(
   let providerId = 0;
   db.exec("BEGIN");
   try {
+    if (taken) {
+      run("DELETE FROM email_confirms WHERE user_id = ?", taken.id);
+      run("DELETE FROM password_resets WHERE user_id = ?", taken.id);
+      run("DELETE FROM users WHERE id = ?", taken.id);
+      if (taken.provider_id) {
+        run("DELETE FROM providers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM users WHERE provider_id = ?)", taken.provider_id, taken.provider_id);
+      }
+    }
     const provider = run(
       `INSERT INTO providers
         (name, product_plan, support_phone, logo_letter, created_at, subscriber_base, trial_ends, gstin, address, city, state, country, pincode, billing_term, otp_via)
@@ -1824,12 +1853,13 @@ export async function registerProvider(
     );
     providerId = Number(provider.lastInsertRowid);
     const user = run(
-      "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner) VALUES (?, ?, 'admin', ?, ?, ?, 1)",
+      "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner, email_verified) VALUES (?, ?, 'admin', ?, ?, ?, 1, ?)",
       email,
       hashPassword(password),
       name,
       nowStamp(),
       providerId,
+      mailReady ? 0 : 1,
     );
     userId = Number(user.lastInsertRowid);
     db.exec("COMMIT");
@@ -1837,38 +1867,99 @@ export async function registerProvider(
     db.exec("ROLLBACK");
     throw error;
   }
-  await setSession(userId);
-  const chosen = CATALOG[plan];
+  if (!mailReady) {
+    await setSession(userId);
+    redirect(`/provider/upgrade?notice=${encodeURIComponent(await finishSignup(userId))}`);
+  }
+  const sent = await sendConfirmLink(userId, email, isp, name);
+  if (!sent.ok) {
+    return { error: "The confirmation email could not be sent. Check the address, then try again." };
+  }
+  redirect("/confirm?sent=1");
+}
+
+/** Emails the owner a link that opens the desk. The link works once, for 24 hours. */
+async function sendConfirmLink(userId: number, email: string, ispName: string, ownerName: string) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  run("DELETE FROM email_confirms WHERE user_id = ?", userId);
+  run("INSERT INTO email_confirms (user_id, token_hash, expires_at) VALUES (?, ?, ?)", userId, tokenHash, Date.now() + 24 * 60 * 60 * 1000);
+  const mail = confirmEmailMail({ ispName, ownerName, link: `${siteOrigin()}/confirm/${token}` });
+  const sent = await sendMail(email, mail.subject, mail.text, mail.html);
+  if (!sent.ok) run("DELETE FROM email_confirms WHERE token_hash = ?", tokenHash);
+  return sent;
+}
+
+/** Posts the welcome note and email once a desk is open, and returns the notice for the first screen. */
+async function finishSignup(userId: number) {
+  const owner = one<{ email: string; name: string; provider_id: number }>("SELECT email, name, provider_id FROM users WHERE id = ?", userId);
+  const desk = owner ? getProvider(owner.provider_id) : undefined;
+  if (!owner || !desk) return "Your desk is open.";
+  const chosen = CATALOG[desk.product_plan];
+  const term: BillTerm = isBillTerm(desk.billing_term) ? desk.billing_term : "monthly";
   const termLabel = BILL_TERMS.find((item) => item.id === term)?.label ?? "Monthly";
   const planFee = termQuote(chosen.price, term).due;
   const added = getPlatformProfile().gstin ? gstAdded(planFee) : null;
   const fee = added ? `${formatInr(planFee)} + GST ${formatInr(added.tax)}` : formatInr(planFee);
   const welcomeTitle = "Welcome to Zignal Connect";
-  const welcomeBody = `Your desk for ${isp} is open on ${chosen.label} ${termLabel.toLowerCase()}. The trial runs until ${formatDate(trialEnds)}. The first desk fee of ${fee} is booked for that day. No card is charged during the trial. Sign in with ${email} and the password you chose.`;
+  const welcomeBody = `Your desk for ${desk.name} is open on ${chosen.label} ${termLabel.toLowerCase()}. The trial runs until ${formatDate(desk.trial_ends)}. The first desk fee of ${fee} is booked for that day. No card is charged during the trial. Sign in with ${owner.email} and the password you chose.`;
   try {
-    postDeskWelcome(providerId, welcomeTitle, welcomeBody);
+    postDeskWelcome(desk.id, welcomeTitle, welcomeBody);
   } catch (error) {
     console.error("desk welcome note", error instanceof Error ? error.message : "failed");
   }
   const welcome = deskWelcomeMail({
-    ispName: isp,
-    ownerName: name,
-    email,
+    ispName: desk.name,
+    ownerName: owner.name,
+    email: owner.email,
     plan: `${chosen.label} · ${termLabel}`,
-    trialEnds: formatDate(trialEnds),
+    trialEnds: formatDate(desk.trial_ends),
     fee,
   });
-  const mailed = await sendMail(email, welcome.subject, welcome.text, welcome.html);
+  const mailed = await sendMail(owner.email, welcome.subject, welcome.text, welcome.html);
   const welcomeNote = mailed.ok
-    ? ` A welcome email was sent to ${email}.`
+    ? ` A welcome email was sent to ${owner.email}.`
     : mailed.reason === "unconfigured"
       ? " Welcome email was not sent. The mail account is not connected on the server."
       : " The welcome email could not be sent.";
-  redirect(
-    `/provider/upgrade?notice=${encodeURIComponent(
-      `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(trialEnds)}. You registered ${base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.${welcomeNote}`,
-    )}`,
+  return `${chosen.label} ${termLabel.toLowerCase()} trial runs until ${formatDate(desk.trial_ends)}. You registered ${desk.subscriber_base} subscribers and can add up to ${limitLabel(chosen.customers)} during the trial.${welcomeNote}`;
+}
+
+export async function confirmEmail(formData: FormData) {
+  const token = readText(formData, "token");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const row = one<{ id: number; user_id: number; expires_at: number }>("SELECT id, user_id, expires_at FROM email_confirms WHERE token_hash = ?", tokenHash);
+  if (!row || row.expires_at < Date.now()) {
+    if (row) run("DELETE FROM email_confirms WHERE id = ?", row.id);
+    go("/confirm", { error: "That confirmation link has expired or was already used. Ask for a new one below." });
+  }
+  run("UPDATE users SET email_verified = 1 WHERE id = ?", row.user_id);
+  run("DELETE FROM email_confirms WHERE user_id = ?", row.user_id);
+  refresh();
+  await setSession(row.user_id);
+  redirect(`/provider/upgrade?notice=${encodeURIComponent(await finishSignup(row.user_id))}`);
+}
+
+export async function resendConfirmation(formData: FormData) {
+  const email = readText(formData, "email").toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) go("/confirm", { error: "Enter the email you signed up with." });
+  if (!mailConfigured()) go("/confirm", { error: "Email is not connected on the server yet. Please try again later." });
+  // Same answer whether or not the email has a waiting desk, and the same limits as a password reset.
+  const ip = await clientIp();
+  const ipKey = ip ? `confirm:i:${ip}` : "";
+  if (ipKey && isBlocked(ipKey, RESET_PER_IP, HOUR)) go("/confirm", { error: "Too many requests from this connection. Try again in an hour." });
+  if (ipKey) addHit(ipKey);
+  const emailKey = `confirm:e:${email}`;
+  const tooOften = isBlocked(emailKey, RESET_PER_EMAIL, HOUR);
+  addHit(emailKey);
+  if (tooOften) go("/confirm", { sent: "1" });
+  const owner = one<{ id: number; name: string; provider_id: number }>(
+    "SELECT id, name, provider_id FROM users WHERE email = ? AND email_verified = 0 AND is_owner = 1",
+    email,
   );
+  const desk = owner ? one<{ name: string }>("SELECT name FROM providers WHERE id = ?", owner.provider_id) : undefined;
+  if (owner && desk) void sendConfirmLink(owner.id, email, desk.name, owner.name).catch(() => undefined);
+  go("/confirm", { sent: "1" });
 }
 
 function sheetEmail(row: SheetRow) {
@@ -2964,45 +3055,63 @@ export async function inviteStaff(formData: FormData) {
   if (!/^[6-9]\d{9}$/.test(mobile)) go("/provider/team", { error: "Enter a 10-digit mobile number." });
   if (!/^\S+@\S+\.\S+$/.test(email)) go("/provider/team", { error: "Enter a valid email." });
   if (one("SELECT id FROM users WHERE email = ?", email)) go("/provider/team", { error: "That email is already used for a login." });
-  const password = crypto.randomBytes(4).toString("hex");
-  run(
-    "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner, mobile, login_password) VALUES (?, ?, 'admin', ?, ?, ?, 0, ?, ?)",
+  if (!mailConfigured()) go("/provider/team", { error: "Email is not connected yet, so the password link cannot be sent. Try again once it is." });
+  // Nobody knows this starting password. The staff member sets their own from the emailed link.
+  const created = run(
+    "INSERT INTO users (email, password_hash, role, name, created_at, provider_id, is_owner, mobile) VALUES (?, ?, 'admin', ?, ?, ?, 0, ?)",
     email,
-    hashPassword(password),
+    hashPassword(crypto.randomBytes(24).toString("hex")),
     name,
     nowStamp(),
     session.providerId,
     mobile,
-    password,
   );
+  const sent = await mailResetLink({
+    userId: Number(created.lastInsertRowid),
+    kind: "desk",
+    email,
+    ispName: session.brandName,
+    signoff: session.brandName,
+    intro: `${session.brandName} added you to its Zignal Connect desk.`,
+    minutes: 3 * 24 * 60,
+  });
   refresh();
   const over = usage.staff + 1 > usage.staffCap;
+  const overNote = over ? ` This login is above the ${limitLabel(usage.staffCap)} included on ${usage.catalog.label}, at ₹10 per month.` : "";
   go("/provider/team", {
-    notice: over
-      ? `${name} is on the team list. This login is above the ${limitLabel(usage.staffCap)} included on ${usage.catalog.label}, at ₹10 per month.`
-      : `${name} is on the team list, with email, password, and mobile saved on this page.`,
+    notice: sent.ok
+      ? `${name} was added. A link to set a password was sent to ${email}. It works for 3 days.${overNote}`
+      : `${name} was added, but the email could not be sent. Use "Send password link" on the list to try again.${overNote}`,
   });
 }
 
 export async function reissueStaffPassword(formData: FormData) {
   const session = await requireRole("admin");
-  if (!session.isOwner) go("/provider/team", { error: "Only the desk owner can set a staff password." });
+  if (!session.isOwner) go("/provider/team", { error: "Only the desk owner can send a staff password link." });
   const id = Number(formData.get("staff_id"));
-  const person = one<{ id: number; name: string; is_owner: number }>(
-    "SELECT id, name, is_owner FROM users WHERE id = ? AND provider_id = ? AND role = 'admin'",
+  const person = one<{ id: number; name: string; email: string; is_owner: number }>(
+    "SELECT id, name, email, is_owner FROM users WHERE id = ? AND provider_id = ? AND role = 'admin'",
     id,
     session.providerId,
   );
   if (!person || person.is_owner) go("/provider/team", { error: "That staff login was not found." });
-  const password = crypto.randomBytes(4).toString("hex");
-  run(
-    "UPDATE users SET password_hash = ?, login_password = ? WHERE id = ?",
-    hashPassword(password),
-    password,
-    person.id,
-  );
-  refresh();
-  go("/provider/team", { notice: `A new password for ${person.name} is saved on this page.` });
+  if (!mailConfigured()) go("/provider/team", { error: "Email is not connected yet, so the password link cannot be sent." });
+  if (isBlocked(`reset:e:${person.email}`, RESET_PER_EMAIL, HOUR)) {
+    go("/provider/team", { error: "A link was already sent to this address a few times in the last hour. Try again later." });
+  }
+  addHit(`reset:e:${person.email}`);
+  const sent = await mailResetLink({
+    userId: person.id,
+    kind: "desk",
+    email: person.email,
+    ispName: session.brandName,
+    signoff: session.brandName,
+    fromProvider: true,
+    minutes: 3 * 24 * 60,
+  });
+  go("/provider/team", {
+    notice: sent.ok ? `A link to set a password was sent to ${person.email}. It works for 3 days.` : `The email to ${person.email} could not be sent. Try again in a little while.`,
+  });
 }
 
 export async function openUpgradeCheckout(formData: FormData) {
@@ -3706,9 +3815,9 @@ export async function saveLineLink(formData: FormData) {
     host,
     port,
     user,
-    secret,
+    seal(secret),
     database,
-    coa,
+    seal(coa),
     session.providerId,
   );
   refresh();
@@ -3822,12 +3931,7 @@ export async function changeDeskPassword(formData: FormData) {
   }
   if (nextPassword.length < 6) go("/provider/settings", { error: "Use at least 6 characters for the new password." });
   if (nextPassword !== confirm) go("/provider/settings", { error: "The new password and confirmation do not match." });
-  run(
-    "UPDATE users SET password_hash = ?, login_password = ? WHERE id = ?",
-    hashPassword(nextPassword),
-    user.is_owner ? "" : nextPassword,
-    session.uid,
-  );
+  run("UPDATE users SET password_hash = ?, login_password = '' WHERE id = ?", hashPassword(nextPassword), session.uid);
   refresh();
   go("/provider/settings", { notice: "Password updated." });
 }

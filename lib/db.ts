@@ -5,9 +5,10 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { DEMO_ADMIN, DEMO_OPERATOR } from "@/lib/demo";
 import { addDays, addMonths, nowStamp, todayISO } from "@/lib/format";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { needsSealing, open, seal } from "@/lib/secret-box";
 import { ZIGNAL_ADMIN_EMAIL, ZIGNAL_ADMIN_NAME, ZIGNAL_ADMIN_PASSWORD_HASH } from "@/lib/zignal-admin";
 
-const SCHEMA = 9;
+const SCHEMA = 10;
 const globalForDb = globalThis as unknown as { lumenDb?: DatabaseSync; schema?: number };
 
 function openDatabase() {
@@ -1122,6 +1123,41 @@ function ensureCustomerTaxColumns(db: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS idx_rate_hits_key ON rate_hits(key, at);
   `);
+  // A desk owner who signs up must confirm the email before the desk opens. Every login that already exists counts as confirmed.
+  if (!columnNames(db, "users").has("email_verified")) {
+    db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_confirms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_confirms_token ON email_confirms(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_email_confirms_user ON email_confirms(user_id);
+  `);
+  // Staff passwords are no longer kept in readable form. Staff get a link to set their own.
+  db.exec("UPDATE users SET login_password = '' WHERE login_password <> ''");
+  sealStoredSecrets(db);
+}
+
+const SEALED_FIELDS = ["bank_account", "bank_pan", "line_secret", "line_coa"] as const;
+
+/** Seals any bank, PAN, or network secret that is still plain, or sealed under an older key. */
+function sealStoredSecrets(db: DatabaseSync) {
+  const columns = columnNames(db, "providers");
+  const fields = SEALED_FIELDS.filter((name) => columns.has(name));
+  if (fields.length === 0) return;
+  const rows = db.prepare(`SELECT id, ${fields.join(", ")} FROM providers`).all() as Array<Record<string, string | number>>;
+  for (const row of rows) {
+    for (const name of fields) {
+      const stored = String(row[name] ?? "");
+      if (needsSealing(stored)) {
+        db.prepare(`UPDATE providers SET ${name} = ? WHERE id = ?`).run(seal(open(stored)), row.id);
+      }
+    }
+  }
 }
 
 function columnNames(db: DatabaseSync, table: string) {

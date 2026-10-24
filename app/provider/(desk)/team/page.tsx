@@ -28,7 +28,7 @@ export default async function TeamPage({
             {usage.staffOverage > 0
               ? `, and ${usage.staffOverage} extra at ₹${STAFF_OVERAGE_RATE} each (${formatInr(usage.staffOverageDue)} per month)`
               : ""}
-            . Email, password, and mobile stay on this page so you can share them.
+            . A new staff member gets an email with a link to choose their own password. Nobody, including you, can see it.
           </p>
         </div>
       </header>
@@ -57,13 +57,11 @@ export default async function TeamPage({
                       <td>
                         {person.is_owner ? (
                           "Set when this desk was opened"
-                        ) : person.login_password ? (
-                          person.login_password
                         ) : (
                           <form action={reissueStaffPassword}>
                             <input type="hidden" name="staff_id" value={person.id} />
-                            <SubmitButton className="btn small" pendingLabel="Saving…">
-                              Save a password
+                            <SubmitButton className="btn small" pendingLabel="Sending…">
+                              Send password link
                             </SubmitButton>
                           </form>
                         )}
@@ -99,7 +97,7 @@ export default async function TeamPage({
                 <span>Email</span>
                 <input name="email" type="email" required />
               </label>
-              <SubmitButton>Create staff login</SubmitButton>
+              <SubmitButton pendingLabel="Sending link…">Create staff login and email a link</SubmitButton>
             </form>
           ) : (
             <p className="fine">Only the owner can add staff.</p>

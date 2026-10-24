@@ -1,5 +1,6 @@
 import { settleDueDesks } from "@/lib/desk-close";
 import { many, one, run } from "@/lib/db";
+import { open } from "@/lib/secret-box";
 import type { SupportFollowup, SupportRequest } from "@/lib/support";
 import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, customerLimit, isBillTerm, isProductPlan, overflowLimit, staffLimit, termQuote, type ProductPlan } from "@/lib/entitlements";
 import { isLineStatus, type LineStatus } from "@/lib/line-status";
@@ -151,7 +152,6 @@ export type StaffMember = {
   name: string;
   email: string;
   mobile: string;
-  login_password: string;
   is_owner: number;
 };
 
@@ -283,7 +283,16 @@ export function listCustomerExtraPlans(customerId: number) {
 }
 
 export function getProvider(providerId: number) {
-  return one<ProviderRecord>("SELECT * FROM providers WHERE id = ?", providerId);
+  const provider = one<ProviderRecord>("SELECT * FROM providers WHERE id = ?", providerId);
+  if (!provider) return provider;
+  // Bank, PAN, and network secrets are stored sealed. Every reader gets them opened from here.
+  return {
+    ...provider,
+    bank_account: open(provider.bank_account),
+    bank_pan: open(provider.bank_pan),
+    line_secret: open(provider.line_secret),
+    line_coa: open(provider.line_coa),
+  };
 }
 
 export type AgentCommissionRow = {
@@ -748,7 +757,13 @@ export function listProviderDeskBills(providerId: number) {
 }
 
 export function listOpenDesks() {
-  return many<{ id: number; name: string }>("SELECT id, name FROM providers WHERE closed_at = '' ORDER BY name");
+  // A desk whose owner has not confirmed the email yet is not open, so it is not offered to subscribers.
+  return many<{ id: number; name: string }>(
+    `SELECT id, name FROM providers
+     WHERE closed_at = ''
+       AND EXISTS (SELECT 1 FROM users o WHERE o.provider_id = providers.id AND o.is_owner = 1 AND o.email_verified = 1)
+     ORDER BY name`,
+  );
 }
 
 export function listComplaints(scope: { providerId: number } | { customerId: number }) {
@@ -781,7 +796,7 @@ export function getComplaint(id: number, providerId: number) {
 
 export function listStaff(providerId: number) {
   return many<StaffMember>(
-    "SELECT id, name, email, mobile, login_password, is_owner FROM users WHERE provider_id = ? AND role = 'admin' ORDER BY is_owner DESC, name",
+    "SELECT id, name, email, mobile, is_owner FROM users WHERE provider_id = ? AND role = 'admin' ORDER BY is_owner DESC, name",
     providerId,
   );
 }
@@ -930,6 +945,7 @@ export function operatorDesk() {
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.status = 'suspended') AS paused,
             (SELECT COUNT(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.provider_id = p.id AND c.renew_date < ?) AS overdue
      FROM providers p
+     WHERE EXISTS (SELECT 1 FROM users o WHERE o.provider_id = p.id AND o.is_owner = 1 AND o.email_verified = 1)
      ORDER BY p.name`,
     today,
   ).map((provider) => {

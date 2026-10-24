@@ -2,7 +2,7 @@ import { billCycleLabel } from "@/lib/bill-cycle";
 import { invoiceFor } from "@/lib/charges";
 import { many, one, run } from "@/lib/db";
 import { BILL_TERMS, CATALOG, allows, isBillTerm, isProductPlan, termQuote, type BillTerm, type ProductPlan } from "@/lib/entitlements";
-import { addMonths, daysUntil, formatDate, formatInr, formatSpeed, isDate, nowStamp, todayISO } from "@/lib/format";
+import { addDays, addMonths, daysUntil, formatDate, formatInr, formatSpeed, isDate, nowStamp, todayISO } from "@/lib/format";
 import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
 import { settleExpiredDeskPromises, settleExpiredPromises } from "@/lib/promise-pay";
 import { deskMailSettings, getPlatformProfile, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
@@ -241,7 +241,24 @@ export async function sendDeskNote(providerId: number, title: string, body: stri
   return { ok: true as const };
 }
 
+/** A desk whose owner never confirmed the email has no data. After a week it is removed, so the email is free again. */
+export function purgeUnconfirmedDesks() {
+  const cutoff = addDays(todayISO(), -7);
+  const stale = many<{ id: number; provider_id: number | null }>(
+    "SELECT id, provider_id FROM users WHERE email_verified = 0 AND is_owner = 1 AND substr(created_at, 1, 10) < ?",
+    cutoff,
+  );
+  for (const user of stale) {
+    run("DELETE FROM email_confirms WHERE user_id = ?", user.id);
+    run("DELETE FROM password_resets WHERE user_id = ?", user.id);
+    run("DELETE FROM users WHERE id = ?", user.id);
+    if (user.provider_id) run("DELETE FROM providers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM users WHERE provider_id = ?)", user.provider_id, user.provider_id);
+  }
+  return stale.length;
+}
+
 export async function runMorningReminders() {
+  purgeUnconfirmedDesks();
   await settleExpiredPromises();
   settleExpiredDeskPromises();
   const providers = many<{ id: number }>("SELECT id FROM providers");

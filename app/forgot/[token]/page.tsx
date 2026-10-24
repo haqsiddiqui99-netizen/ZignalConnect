@@ -37,7 +37,7 @@ export default async function SetPasswordPage({
           </p>
         ) : (
           <>
-            <p className="fine">Choose a password of at least 6 characters. This link works once, for 15 minutes.</p>
+            <p className="fine">Choose a password of at least 6 characters. This link works only once.</p>
             <div style={{ height: 16 }} />
             <Banner error={error} />
             <form action={completePasswordReset} className="stack">
