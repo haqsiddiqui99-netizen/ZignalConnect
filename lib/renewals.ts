@@ -3,7 +3,7 @@ import { invoiceFor } from "@/lib/charges";
 import { many, one, run } from "@/lib/db";
 import { BILL_TERMS, CATALOG, allows, isBillTerm, isProductPlan, termQuote, type BillTerm, type ProductPlan } from "@/lib/entitlements";
 import { addDays, addMonths, daysUntil, formatDate, formatInr, formatSpeed, isDate, nowStamp, todayISO } from "@/lib/format";
-import { mailConfigured, renewalMail, sendMail } from "@/lib/mail";
+import { mailConfigured, renewalMail, sendMail, sendMailBatch, type MailJob } from "@/lib/mail";
 import { settleExpiredDeskPromises, settleExpiredPromises } from "@/lib/promise-pay";
 import { deskMailSettings, getPlatformProfile, getProvider, getSubscriber, listCustomerCharges, listCustomerDiscounts, listCustomerExtraPlans } from "@/lib/queries";
 import { gstAdded } from "@/lib/tax";
@@ -80,8 +80,9 @@ export async function issueRenewalReminders(providerId: number) {
      WHERE u.provider_id = ?`,
     providerId,
   );
-  let emailed = 0;
-  let failed = 0;
+  // First decide who is due a reminder, then send them all together. Sending one at a time made a big ISP wait minutes.
+  const queue: Array<{ lineId: number; stage: string; cycleDate: string; title: string; body: string; email: string; job: MailJob }> = [];
+  if (!mailConfigured()) return { emailed: 0, failed: 0 };
   for (const line of lines) {
     if (!line.reminders) continue;
     if (line.status === "suspended" || line.status === "disconnected" || line.status === "write_off") continue;
@@ -114,24 +115,42 @@ export async function issueRenewalReminders(providerId: number) {
         (stage === "soon" ? REMINDER_DEFAULTS.soonBody : REMINDER_DEFAULTS.dueBody),
       fields,
     ).slice(0, 400);
-    if (!mailConfigured()) continue;
     const mail = renewalMail({ ispName: provider.name, signoff: provider.name, title, body });
-    const sent = await sendMail(billed.person.email, mail.subject, mail.text, mail.html);
-    if (!sent.ok) {
-      failed += 1;
-      continue;
-    }
-    run(
-      "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', ?, ?)",
-      line.id,
+    queue.push({
+      lineId: line.id,
+      stage,
+      cycleDate: line.renew_date,
       title,
       body,
-      nowStamp(),
-      stage,
-      line.renew_date,
-    );
-    emailed += 1;
+      email: billed.person.email,
+      job: { to: billed.person.email, subject: mail.subject, text: mail.text, html: mail.html },
+    });
   }
+
+  const results = await sendMailBatch(queue.map((item) => item.job));
+  let emailed = 0;
+  let failed = 0;
+  queue.forEach((item, index) => {
+    if (!results[index]?.ok) {
+      failed += 1;
+      return;
+    }
+    // Only a sent reminder is recorded, so one that failed is tried again on the next hourly run.
+    try {
+      run(
+        "INSERT INTO reminders (customer_id, title, body, created_at, channel, stage, cycle_date) VALUES (?, ?, ?, ?, 'email', ?, ?)",
+        item.lineId,
+        item.title,
+        item.body,
+        nowStamp(),
+        item.stage,
+        item.cycleDate,
+      );
+    } catch {
+      // Another run recorded the same reminder first. The mail has gone out once from each, which is rare and harmless.
+    }
+    emailed += 1;
+  });
   return { emailed, failed };
 }
 

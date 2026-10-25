@@ -321,6 +321,89 @@ export function renewalMail(input: { ispName: string; signoff: string; title: st
   return letter({ ispName: input.ispName, signoff: input.signoff, subject: input.title, text, blocks });
 }
 
+export type MailJob = { to: string; subject: string; text: string; html?: string };
+export type MailResult = { ok: true } | { ok: false; reason: "unconfigured" | "failed"; detail: string };
+
+const BATCH_SIZE = 50;
+const SMTP_PARALLEL = 4;
+
+function pause(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** One request to Resend's batch endpoint. Returns the HTTP status, or 0 when the service did not answer. */
+async function postBatch(jobs: MailJob[], from: string) {
+  const banner = `${siteOrigin()}/email-banner.png?v=2`;
+  const body = jobs.map((job) => ({
+    from: fromAddress(from),
+    to: [job.to],
+    subject: job.subject,
+    text: job.text,
+    ...(job.html ? { html: job.html.split("cid:zignal-banner").join(banner) } : {}),
+  }));
+  try {
+    const response = await fetch("https://api.resend.com/emails/batch", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${mailSetting("RESEND_API_KEY")}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    return response.status;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Sends many messages quickly. With Resend, up to 50 go in one request, so a big ISP's reminders take a few
+ * seconds instead of a few minutes, and the rate limit is not hit. A batch that is refused as a whole is retried
+ * when the cause is temporary, and otherwise sent one by one so a single bad address cannot hold back the rest.
+ * Without Resend, up to 4 messages go at a time over SMTP. The result lines up with the jobs, one per job.
+ */
+export async function sendMailBatch(jobs: MailJob[]): Promise<MailResult[]> {
+  if (jobs.length === 0) return [];
+  if (!mailConfigured()) {
+    return jobs.map(() => ({ ok: false as const, reason: "unconfigured" as const, detail: "Email is not connected yet." }));
+  }
+  const results: MailResult[] = new Array(jobs.length);
+
+  if (webMailReady()) {
+    const from = mailSetting("SMTP_FROM");
+    for (let start = 0; start < jobs.length; start += BATCH_SIZE) {
+      const chunk = jobs.slice(start, start + BATCH_SIZE);
+      let status = await postBatch(chunk, from);
+      for (let attempt = 1; attempt <= 2 && (status === 0 || status === 429 || status >= 500); attempt += 1) {
+        await pause(1500 * attempt);
+        status = await postBatch(chunk, from);
+      }
+      if (status >= 200 && status < 300) {
+        chunk.forEach((_, index) => (results[start + index] = { ok: true }));
+        continue;
+      }
+      console.error(`mail batch refused: web ${status}. Sending that group one by one.`);
+      for (let index = 0; index < chunk.length; index += 1) {
+        const job = chunk[index];
+        results[start + index] = await sendMail(job.to, job.subject, job.text, job.html);
+        // Resend allows about two requests a second on a new account.
+        await pause(550);
+      }
+    }
+    return results;
+  }
+
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const index = next;
+      next += 1;
+      const job = jobs[index];
+      results[index] = await sendMail(job.to, job.subject, job.text, job.html);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SMTP_PARALLEL, jobs.length) }, worker));
+  return results;
+}
+
 export async function sendMail(
   to: string,
   subject: string,
