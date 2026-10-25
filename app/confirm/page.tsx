@@ -12,7 +12,7 @@ export default async function ConfirmPage({
 }) {
   const { error, sent } = await searchParams;
   return (
-    <main className="login-panel" style={{ minHeight: "100vh" }}>
+    <main className="auth-page">
       <div className="panel-card">
         <h2>Confirm your email</h2>
         {sent === "1" ? (

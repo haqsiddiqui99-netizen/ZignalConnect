@@ -12,7 +12,7 @@ export default async function ForgotPasswordPage({
 }) {
   const { error, sent } = await searchParams;
   return (
-    <main className="login-panel" style={{ minHeight: "100vh" }}>
+    <main className="auth-page">
       <div className="panel-card">
         <h2>Forgot password</h2>
         {sent === "1" ? (
@@ -28,7 +28,7 @@ export default async function ForgotPasswordPage({
             <form action={requestPasswordReset} className="stack">
               <label className="field">
                 <span>Email</span>
-                <input name="email" type="email" autoComplete="username" required placeholder="you@zignal.connect" />
+                <input name="email" type="email" autoComplete="username" required placeholder="you@example.com" />
               </label>
               <SubmitButton pendingLabel="Sending…">Send reset email</SubmitButton>
             </form>

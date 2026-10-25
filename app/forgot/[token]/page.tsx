@@ -28,7 +28,7 @@ export default async function SetPasswordPage({
   const expired = Number(row.expires_at) < Date.now();
 
   return (
-    <main className="login-panel" style={{ minHeight: "100vh" }}>
+    <main className="auth-page">
       <div className="panel-card">
         <h2>Set a new password</h2>
         {expired ? (

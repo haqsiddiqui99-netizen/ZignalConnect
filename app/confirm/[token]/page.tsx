@@ -24,7 +24,7 @@ export default async function ConfirmTokenPage({ params }: { params: Promise<{ t
   const expired = row.expires_at < Date.now();
 
   return (
-    <main className="login-panel" style={{ minHeight: "100vh" }}>
+    <main className="auth-page">
       <div className="panel-card">
         <h2>Open your desk</h2>
         {expired ? (

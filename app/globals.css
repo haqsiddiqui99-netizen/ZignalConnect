@@ -207,6 +207,27 @@ svg.brand-mark { display: block; background: #14261e; box-shadow: inset 0 0 0 1p
   padding: 32px 28px;
 }
 .panel-card { width: 100%; }
+/* Stand-alone pages (forgot password, confirm email): one centred card instead of a full-width panel. */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+.auth-page .panel-card {
+  max-width: 440px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 36px 32px 28px;
+  box-shadow: 0 18px 50px rgba(28, 25, 22, 0.08);
+}
+.auth-page .panel-card > .fine:last-child { text-align: center; }
+@media (max-width: 480px) {
+  .auth-page { align-items: flex-start; padding-top: 40px; }
+  .auth-page .panel-card { padding: 28px 20px 22px; }
+}
 .login-open {
   position: absolute;
   top: 34px;
