@@ -36,11 +36,17 @@ export default function RefundPage() {
           straight to the ISP. Zignal Connect does not hold it, and does not refund it. That is between the ISP and the
           subscriber. Online card collection is not connected yet.
         </p>
+        <h2>Taxes, and a wrong or double charge</h2>
+        <p>
+          When a desk fee is returned, the GST charged on it is returned with it. If a desk fee is charged twice, or
+          charged in error, the extra amount is returned in full whenever it is reported.
+        </p>
         <h2>How to ask</h2>
         <p>
           Email <a href="mailto:support@zignalconnect.com">support@zignalconnect.com</a> from the desk owner&apos;s
-          address. Say the ISP name, the amount, and the date. A fee that qualifies is returned to the same method
-          that paid it. The <Link href="/terms">Terms</Link> explain what the desk fee is for.
+          address. Say the ISP name, the amount, and the date. We reply within 7 days. A fee that qualifies is returned
+          to the same method that paid it, and it reaches the account in about 5 to 7 working days after we start the
+          return. The <Link href="/terms">Terms</Link> explain what the desk fee is for.
         </p>
       </article>
     </SiteShell>
