@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { confirmUpiPayment, rejectUpiPayment } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
-import { limitLabel, planForBook } from "@/lib/entitlements";
+import { OVERAGE_RATE, limitLabel, planForBook } from "@/lib/entitlements";
 import { formatDate, formatInr, formatSpeed, formatStamp } from "@/lib/format";
 import { dashboard, getProvider, getUsage, listPendingUpiClaims } from "@/lib/queries";
 import { carriedOverflow, syncDeskOverflow } from "@/lib/receipts";
@@ -132,12 +132,12 @@ export default async function AdminHome({
               : usage.overflowSlots === 0
                 ? `Past the 10% overflow (${limitLabel(usage.overflowCap)}). Upgrade to the next tier to add more. `
                 : usage.overage > 0
-                  ? `${usage.overage} subscribers over the ${limitLabel(usage.customerCap)} cap, at ₹3 each (${formatInr(usage.overageDue)} this month). ${usage.overflowSlots} overflow slots left. ${
+                  ? `${usage.overage} subscribers over the ${limitLabel(usage.customerCap)} cap, at ₹${OVERAGE_RATE} each (${formatInr(usage.overageDue)} this month). ${usage.overflowSlots} overflow slots left. ${
                       unbilled > 0
                         ? `${formatInr(unbilled)} was added after this month's invoice was paid, so it is added to next month's bill together with next month's overflow. `
                         : ""
                     }`
-                  : `${limitLabel(usage.customerSlots)} customer slots left. A short overflow runs to ${limitLabel(usage.overflowCap)} at ₹3 each. `}
+                  : `${limitLabel(usage.customerSlots)} customer slots left. A short overflow runs to ${limitLabel(usage.overflowCap)} at ₹${OVERAGE_RATE} each. `}
             {usage.trial.active && usage.customers <= usage.overflowCap
               ? `Trial until ${formatDate(usage.trial.ends)}. The first month can take the whole list. `
               : ""}

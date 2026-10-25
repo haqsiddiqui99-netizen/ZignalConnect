@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   CATALOG,
+  OVERAGE_RATE,
   PLAN_POINTS,
   PREMIUM_PLANS,
   limitLabel,
@@ -91,7 +92,7 @@ export function SignupPlans() {
             <span className="trial-tab">{CATALOG.pro.trialDays}-day trial</span>
           </div>
           <h2>{CATALOG.pro.label}</h2>
-          <TermPrice monthly={CATALOG.pro.price} term={term} />
+          <TermPrice monthly={CATALOG.pro.price} term={term} customers={CATALOG.pro.customers} />
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.pro.customers)}</b>
@@ -107,7 +108,7 @@ export function SignupPlans() {
             </li>
           </ul>
           <p className="fine">
-            Overflow to {limitLabel(overflowLimit("pro"))} at ₹3 each. Extra staff ₹10 a month. Extra messages ₹0.50.
+            Overflow to {limitLabel(overflowLimit("pro"))} at ₹{OVERAGE_RATE} each. Extra staff ₹10 a month. Extra messages ₹0.50.
           </p>
           <ul className="plan-points">
             {pointsFor("pro").map((point) => (
@@ -133,7 +134,7 @@ export function SignupPlans() {
             <span className="trial-tab">{CATALOG.ultra.trialDays}-day trial</span>
           </div>
           <h2>{CATALOG.ultra.label}</h2>
-          <TermPrice monthly={CATALOG.ultra.price} term={term} />
+          <TermPrice monthly={CATALOG.ultra.price} term={term} customers={CATALOG.ultra.customers} />
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.ultra.customers)}</b>
@@ -149,7 +150,7 @@ export function SignupPlans() {
             </li>
           </ul>
           <p className="fine">
-            Overflow to {limitLabel(overflowLimit("ultra"))} at ₹3 each. Extra staff ₹10 a month. Extra messages ₹0.50.
+            Overflow to {limitLabel(overflowLimit("ultra"))} at ₹{OVERAGE_RATE} each. Extra staff ₹10 a month. Extra messages ₹0.50.
           </p>
           <ul className="plan-points">
             {pointsFor("ultra").map((point) => (
@@ -175,9 +176,9 @@ export function SignupPlans() {
           </div>
           <h2>Premium</h2>
           {known && selected === "premium" ? (
-            <TermPrice monthly={premiumTier.price} term={term} />
+            <TermPrice monthly={premiumTier.price} term={term} customers={premiumTier.customers} />
           ) : (
-            <TermPrice monthly={CATALOG.premium_3000.price} term={term} from />
+            <TermPrice monthly={CATALOG.premium_3000.price} term={term} from customers={CATALOG.premium_3000.customers} />
           )}
           <ul className="plan-stats">
             <li>
@@ -189,7 +190,7 @@ export function SignupPlans() {
               <span>staff</span>
             </li>
             <li>
-              <b>₹3</b>
+              <b>₹{OVERAGE_RATE}</b>
               <span>overflow each</span>
             </li>
           </ul>

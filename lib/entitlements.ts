@@ -11,7 +11,8 @@ export type PlanFamily = "pro" | "ultra" | "premium";
 
 export type Feature = "customBrand" | "logo" | "emailReminders" | "reports" | "sms" | "onlinePay" | "areas" | "renewalReminders";
 
-export const OVERAGE_RATE = 3;
+// Never below a plan's own per-subscriber rate (Pro is about ₹4), so extras are not cheaper than the base.
+export const OVERAGE_RATE = 4;
 export const STAFF_OVERAGE_RATE = 10;
 export const EXTRA_MESSAGE_RATE = 0.5;
 // What it costs to send one included reminder. Extras are sold at EXTRA_MESSAGE_RATE.
@@ -22,7 +23,7 @@ export type BillTerm = "monthly" | "quarterly" | "yearly";
 export const BILL_TERMS: { id: BillTerm; label: string; months: number; note: string }[] = [
   { id: "monthly", label: "Monthly", months: 1, note: "Billed every month" },
   { id: "quarterly", label: "Quarterly", months: 3, note: "10% off" },
-  { id: "yearly", label: "Yearly", months: 12, note: "15% off" },
+  { id: "yearly", label: "Yearly", months: 12, note: "2 months free" },
 ];
 
 export const CATALOG: Record<
@@ -31,7 +32,7 @@ export const CATALOG: Record<
 > = {
   pro: {
     label: "Pro",
-    price: 1499,
+    price: 1999,
     customers: 500,
     reminders: 1000,
     staff: 3,
@@ -40,7 +41,7 @@ export const CATALOG: Record<
   },
   ultra: {
     label: "Ultra",
-    price: 3999,
+    price: 3499,
     customers: 1000,
     reminders: 2000,
     staff: 10,
@@ -49,7 +50,7 @@ export const CATALOG: Record<
   },
   premium_3000: {
     label: "Premium 3,000",
-    price: 7999,
+    price: 8999,
     customers: 3000,
     reminders: 6000,
     staff: 20,
@@ -58,7 +59,7 @@ export const CATALOG: Record<
   },
   premium_5000: {
     label: "Premium 5,000",
-    price: 12999,
+    price: 13999,
     customers: 5000,
     reminders: 10000,
     staff: 20,
@@ -115,7 +116,7 @@ export const PLAN_POINTS: { label: string; plans: PlanFamily[] }[] = [
   { label: "SMS and WhatsApp reminders", plans: ["pro", "ultra", "premium"] },
   { label: "Subscribers pay renewal online", plans: ["pro", "ultra", "premium"] },
   { label: "Areas or branches", plans: ["pro", "ultra", "premium"] },
-  { label: "10% subscriber overflow at ₹3 each", plans: ["pro", "ultra", "premium"] },
+  { label: `10% subscriber overflow at ₹${OVERAGE_RATE} each`, plans: ["pro", "ultra", "premium"] },
 ];
 
 const FEATURES: Record<Feature, PlanFamily[]> = {
@@ -140,9 +141,16 @@ export function isBillTerm(value: string): value is BillTerm {
 export function termQuote(monthly: number, term: BillTerm) {
   const months = term === "yearly" ? 12 : term === "quarterly" ? 3 : 1;
   const full = monthly * months;
-  const due = term === "yearly" ? Math.round(monthly * 12 * 0.85) : term === "quarterly" ? Math.round(monthly * 3 * 0.9) : monthly;
+  // Yearly is 12 months for the price of 10 (two months free). Quarterly is 10% off.
+  const due = term === "yearly" ? Math.round(monthly * 10) : term === "quarterly" ? Math.round(monthly * 3 * 0.9) : monthly;
   const save = full - due;
   return { months, full, due, save, perMonth: Math.round(due / months), percent: full > 0 ? Math.round((save / full) * 100) : 0 };
+}
+
+/** The fee per subscriber per month, when the book is full, as text such as "₹3.33". */
+export function perSubscriber(due: number, months: number, customers: number) {
+  if (!customers || !months) return "";
+  return `₹${(due / months / customers).toFixed(2)}`;
 }
 
 export function planFamily(plan: ProductPlan): PlanFamily {

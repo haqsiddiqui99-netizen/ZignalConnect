@@ -57,7 +57,7 @@ export default async function UpgradePaymentPage({
             {order.tax > 0 ? ` · GST ${formatInr(order.tax)} on top` : " · + GST applicable"}
             {order.promo_off ? ` · ${order.promo_code} −${formatInr(order.promo_off)}` : ""}
             {" · "}
-            {order.billing_term === "yearly" ? "per year, 15% off" : order.billing_term === "quarterly" ? "every 3 months, 10% off" : "per month"}
+            {order.billing_term === "yearly" ? "per year, 2 months free" : order.billing_term === "quarterly" ? "every 3 months, 10% off" : "per month"}
           </p>
         </header>
         <div className="pay-body">

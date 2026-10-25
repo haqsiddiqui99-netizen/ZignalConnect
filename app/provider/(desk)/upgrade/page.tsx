@@ -3,7 +3,7 @@ import { DeskPlanCards } from "@/components/desk-plan-cards";
 import { SubmitButton } from "@/components/submit-button";
 import { Banner } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
-import { allows, isBillTerm, limitLabel, planFamily, planForBook } from "@/lib/entitlements";
+import { OVERAGE_RATE, allows, isBillTerm, limitLabel, planFamily, planForBook } from "@/lib/entitlements";
 import { formatDate, formatInr } from "@/lib/format";
 import { IspPincodeFields } from "@/components/service-address";
 import { getUsage } from "@/lib/queries";
@@ -36,13 +36,13 @@ export default async function BillingPage({
             {usage.trial.active ? ` Trial runs until ${formatDate(usage.trial.ends)} (${usage.trial.daysLeft} days left).` : ""}
             {usage.trial.ended ? ` Trial ended on ${formatDate(usage.trial.ends)}.` : ""}
             {usage.overage > 0
-              ? ` ${usage.overage} subscribers are over the ${limitLabel(usage.customerCap)} cap (${formatInr(usage.overageDue)} at ₹3 each).`
+              ? ` ${usage.overage} subscribers are over the ${limitLabel(usage.customerCap)} cap (${formatInr(usage.overageDue)} at ₹${OVERAGE_RATE} each).`
               : ""}
             {usage.staffOverage > 0
               ? ` ${usage.staffOverage} staff ${usage.staffOverage === 1 ? "login is" : "logins are"} over the ${limitLabel(usage.staffCap)} included (${formatInr(usage.staffOverageDue)} at ₹10 each per month).`
               : ""}
             {unbilled > 0
-              ? ` ${formatInr(unbilled)} of subscriber overflow was added after this month's invoice was paid. Next month's bill adds that amount, and another ₹3 for each overflow subscriber still on the book.`
+              ? ` ${formatInr(unbilled)} of subscriber overflow was added after this month's invoice was paid. Next month's bill adds that amount, and another ₹${OVERAGE_RATE} for each overflow subscriber still on the book.`
               : ""}
             {unbilledStaff > 0
               ? ` ${formatInr(unbilledStaff)} of staff overflow was added after this month's invoice was paid.`
@@ -60,7 +60,7 @@ export default async function BillingPage({
         </p>
       ) : null}
       <p className="fine">
-        Upgrade opens a payment page for that plan. During a trial, Pay on the current plan opens the same page, so the desk can be paid before the trial ends. The desk fee follows the term you pick, and GST is added on top of that fee. The ₹3 subscriber overflow, extra staff at ₹10
+        Upgrade opens a payment page for that plan. During a trial, Pay on the current plan opens the same page, so the desk can be paid before the trial ends. The desk fee follows the term you pick, and GST is added on top of that fee. The ₹{OVERAGE_RATE} subscriber overflow, extra staff at ₹10
         each, and extra messages at ₹0.50 stay monthly.
       </p>
       <DeskPlanCards

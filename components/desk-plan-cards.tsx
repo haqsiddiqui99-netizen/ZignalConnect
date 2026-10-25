@@ -5,7 +5,7 @@ import { useState } from "react";
 import { openUpgradeCheckout } from "@/lib/actions";
 import { BillTermChoice, TermPrice } from "@/components/bill-term-choice";
 import { SubmitButton } from "@/components/submit-button";
-import { CATALOG, PLAN_POINTS, limitLabel, overflowLimit, planFamily, type BillTerm, type ProductPlan } from "@/lib/entitlements";
+import { CATALOG, OVERAGE_RATE, PLAN_POINTS, limitLabel, overflowLimit, planFamily, type BillTerm, type ProductPlan } from "@/lib/entitlements";
 
 function daysLeftLabel(daysLeft: number) {
   if (daysLeft <= 0) return "Ends today";
@@ -59,7 +59,7 @@ export function DeskPlanCards({
                 </span>
               </div>
               <h2>{item.label}</h2>
-              <TermPrice monthly={item.price} term={term} />
+              <TermPrice monthly={item.price} term={term} customers={item.customers} />
               <ul className="plan-stats">
                 <li>
                   <b>{limitLabel(item.customers)}</b>
@@ -75,7 +75,7 @@ export function DeskPlanCards({
                 </li>
               </ul>
               <p className="fine">
-                Overflow to {limitLabel(overflowLimit(plan))} at ₹3 each. Extra staff ₹10 a month. Extra messages ₹0.50.
+                Overflow to {limitLabel(overflowLimit(plan))} at ₹{OVERAGE_RATE} each. Extra staff ₹10 a month. Extra messages ₹0.50.
               </p>
               <ul className="plan-points">
                 {PLAN_POINTS.filter((feature) => feature.plans.includes(planFamily(plan))).map((feature) => (
@@ -105,7 +105,7 @@ export function DeskPlanCards({
             </span>
           </div>
           <h2>Premium</h2>
-          <TermPrice monthly={CATALOG.premium_3000.price} term={term} from />
+          <TermPrice monthly={CATALOG.premium_3000.price} term={term} from customers={CATALOG.premium_3000.customers} />
           <ul className="plan-stats">
             <li>
               <b>{limitLabel(CATALOG.premium_30000.customers)}</b>
@@ -116,7 +116,7 @@ export function DeskPlanCards({
               <span>staff per 10,000</span>
             </li>
             <li>
-              <b>₹3</b>
+              <b>₹{OVERAGE_RATE}</b>
               <span>overflow each</span>
             </li>
           </ul>

@@ -15,7 +15,7 @@ const MONTHLY_COMMISSION: Record<ProductPlan, number> = {
 
 export function agentCommission(plan: ProductPlan, term: BillTerm, monthlyOverride = 0) {
   const monthly = monthlyOverride > 0 ? monthlyOverride : MONTHLY_COMMISSION[plan];
-  if (term === "yearly") return Math.round(monthly * 12 * 0.85);
+  if (term === "yearly") return Math.round(monthly * 10);
   if (term === "quarterly") return Math.round(monthly * 3 * 0.9);
   return monthly;
 }

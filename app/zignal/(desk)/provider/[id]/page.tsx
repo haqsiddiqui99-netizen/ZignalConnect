@@ -662,7 +662,7 @@ export default async function ProviderDeskPage({
           </div>
           <p className="fine">
             This term owes {formatInr(agentCommission(planId, termId, provider.agent_rate || 0))}
-            {provider.agent_name ? ` to ${provider.agent_name}` : ""}. A quarterly fee uses 10% off, and a yearly fee uses 15% off.
+            {provider.agent_name ? ` to ${provider.agent_name}` : ""}. A quarterly fee uses 10% off, and a yearly fee is 10 months for 12.
           </p>
           <SubmitButton className="btn small" pendingLabel="Saving…">
             Save agent

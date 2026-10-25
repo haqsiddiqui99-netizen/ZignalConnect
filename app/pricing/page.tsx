@@ -3,10 +3,12 @@ import Link from "next/link";
 import { SiteCta, SiteShell } from "@/components/site-shell";
 import {
   CATALOG,
+  OVERAGE_RATE,
   PLAN_POINTS,
   PREMIUM_PLANS,
   limitLabel,
   overflowLimit,
+  perSubscriber,
   termQuote,
   type PlanFamily,
 } from "@/lib/entitlements";
@@ -26,27 +28,30 @@ function pointsFor(family: PlanFamily) {
   );
 }
 
-const CARDS: { family: PlanFamily; name: string; price: number; customers: string; staff: string; note: string }[] = [
+const CARDS: { family: PlanFamily; name: string; price: number; seats: number; customers: string; staff: string; note: string }[] = [
   {
     family: "pro",
     name: CATALOG.pro.label,
     price: CATALOG.pro.price,
+    seats: CATALOG.pro.customers,
     customers: limitLabel(CATALOG.pro.customers),
     staff: limitLabel(CATALOG.pro.staff),
-    note: `Overflow to ${limitLabel(overflowLimit("pro"))} subscribers at ₹3 each.`,
+    note: `Overflow to ${limitLabel(overflowLimit("pro"))} subscribers at ₹${OVERAGE_RATE} each.`,
   },
   {
     family: "ultra",
     name: CATALOG.ultra.label,
     price: CATALOG.ultra.price,
+    seats: CATALOG.ultra.customers,
     customers: limitLabel(CATALOG.ultra.customers),
     staff: limitLabel(CATALOG.ultra.staff),
-    note: `Overflow to ${limitLabel(overflowLimit("ultra"))} subscribers at ₹3 each.`,
+    note: `Overflow to ${limitLabel(overflowLimit("ultra"))} subscribers at ₹${OVERAGE_RATE} each.`,
   },
   {
     family: "premium",
     name: "Premium",
     price: CATALOG.premium_3000.price,
+    seats: CATALOG.premium_3000.customers,
     customers: `${limitLabel(CATALOG.premium_3000.customers)}+`,
     staff: "20 / 10k",
     note: "The rate follows your subscriber base, up to 30,000.",
@@ -55,14 +60,13 @@ const CARDS: { family: PlanFamily; name: string; price: number; customers: strin
 
 export default function PricingPage() {
   const quarterly = termQuote(100, "quarterly").percent;
-  const yearly = termQuote(100, "yearly").percent;
   return (
     <SiteShell current="/pricing">
       <section className="site-hero">
         <p className="site-eyebrow">Pricing</p>
         <h1>Pay for the size of your subscriber book.</h1>
         <p className="site-lede">
-          Monthly is the list price. Quarterly saves {quarterly}%, and yearly saves {yearly}%. GST is added on top of each fee. Every
+          Monthly is the list price. Quarterly saves {quarterly}%, and yearly is two months free: pay for 10 months and get 12, the lowest monthly and per-subscriber rate. GST is added on top of each fee. Every
           plan starts with a 30-day trial.
         </p>
       </section>
@@ -84,6 +88,9 @@ export default function PricingPage() {
                 {formatInr(card.price)}
               </p>
               <p className="fine">a month, billed monthly + GST applicable</p>
+              <p className="plan-save">
+                Yearly: {formatInr(termQuote(card.price, "yearly").perMonth)} a month · {perSubscriber(termQuote(card.price, "yearly").due, 12, card.seats)} per subscriber
+              </p>
             </div>
             <ul className="plan-stats">
               <li>
@@ -120,8 +127,10 @@ export default function PricingPage() {
               <tr>
                 <th>Subscribers up to</th>
                 <th>Monthly</th>
-                <th>Quarterly</th>
-                <th>Yearly</th>
+                <th>Quarterly, per month</th>
+                <th>Yearly, per month</th>
+                <th>Yearly, per subscriber</th>
+                <th>Yearly, billed once</th>
                 <th>Staff logins</th>
               </tr>
             </thead>
@@ -132,7 +141,9 @@ export default function PricingPage() {
                   <tr key={plan}>
                     <td>{limitLabel(tier.customers)}</td>
                     <td>{formatInr(tier.price)}</td>
-                    <td>{formatInr(termQuote(tier.price, "quarterly").due)}</td>
+                    <td>{formatInr(termQuote(tier.price, "quarterly").perMonth)}</td>
+                    <td>{formatInr(termQuote(tier.price, "yearly").perMonth)}</td>
+                    <td>{perSubscriber(termQuote(tier.price, "yearly").due, 12, tier.customers)}</td>
                     <td>{formatInr(termQuote(tier.price, "yearly").due)}</td>
                     <td>{tier.staff}</td>
                   </tr>

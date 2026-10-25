@@ -4,7 +4,7 @@ import Link from "next/link";
 import { openUpgradeCheckout } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { BillTermChoice, TermPrice } from "@/components/bill-term-choice";
-import { CATALOG, STAFF_OVERAGE_RATE, limitLabel, overflowLimit, quotePremium, type BillTerm } from "@/lib/entitlements";
+import { CATALOG, OVERAGE_RATE, STAFF_OVERAGE_RATE, limitLabel, overflowLimit, quotePremium, type BillTerm } from "@/lib/entitlements";
 import { formatInr } from "@/lib/format";
 import { useState } from "react";
 
@@ -48,13 +48,13 @@ export function PremiumQuote({
       </label>
       {plan && quote?.ok ? (
         <div className="quote-panel">
-          <TermPrice monthly={plan.price} term={term} />
+          <TermPrice monthly={plan.price} term={term} customers={plan.customers} />
           <p>
             {limitLabel(count)} subscribers is held on Premium for up to {limitLabel(plan.customers)}.
           </p>
           <p className="fine">
             {limitLabel(plan.reminders)} reminders · {limitLabel(plan.staff)} staff · {plan.trialDays}-day trial. Overflow to{" "}
-            {limitLabel(overflowLimit(quote.plan))} at ₹3 each. Extra staff ₹{STAFF_OVERAGE_RATE} each per month. Extra messages ₹0.50.
+            {limitLabel(overflowLimit(quote.plan))} at ₹{OVERAGE_RATE} each. Extra staff ₹{STAFF_OVERAGE_RATE} each per month. Extra messages ₹0.50.
           </p>
         </div>
       ) : quote && !quote.ok && quote.custom ? (
