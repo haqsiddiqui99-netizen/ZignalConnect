@@ -162,7 +162,6 @@ export default async function LoginPage({
                 </span>
                 <input name="password" type="password" autoComplete="current-password" aria-label="Password" required />
               </label>
-              <p className="fine">A desk sign-in then asks for a code sent to the email or WhatsApp chosen for that desk.</p>
               <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
             </form>
           )}
